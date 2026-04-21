@@ -1,27 +1,36 @@
 /*
  * Global styles for Sepia.
- * Defines the dark-theme CSS variables that Tailwind's custom color tokens
- * reference (see tailwind.config.js). Keeping tokens in CSS variables lets
- * us support theme switching later without rebuilding Tailwind classes.
+ * Mood: "vehicle dashboard" — instrument-black ground, warm amber LED accent,
+ * warm ivory text. Tokens are CSS variables so components can reference them
+ * via Tailwind utilities (see tailwind.config.js).
  */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg-app: #1E1E1E;
-  --bg-surface: #2A2A2A;
-  --bg-surface-hover: #333333;
-  --bg-elevated: #3A3A3A;
-  --border-subtle: #3E3E3E;
-  --border-accent: #555555;
-  --text-primary: #E8E8E8;
-  --text-secondary: #999999;
-  --text-muted: #666666;
-  --accent: #7B6AFF;
-  --accent-hover: #6B5AEF;
-  --danger: #E85454;
-  --success: #4ADE80;
+  /* Grounds */
+  --bg-app: #0F100F;
+  --bg-surface: #171815;
+  --bg-surface-hover: #1E1F1B;
+  --bg-elevated: #23241F;
+
+  /* Borders */
+  --border-subtle: #2D2E28;
+  --border-accent: #3C3D34;
+
+  /* Text — warm ivory through to dim */
+  --text-primary: #F0E8DC;
+  --text-secondary: #A09A8C;
+  --text-muted: #6F6B60;
+
+  /* One warm amber accent carries all active state */
+  --accent: #E8A23B;
+  --accent-hover: #F2B656;
+
+  /* Semantic states — tuned to sit in the warm palette */
+  --danger: #D45A4A;
+  --success: #6BAE7A;
   color-scheme: dark;
 }
 
@@ -33,12 +42,22 @@ html, body, #root {
 body {
   background-color: var(--bg-app);
   color: var(--text-primary);
-  font-family: "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  font-family: "Inter", "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar styling to blend with the dark theme */
+/* Small-caps tracked label — gauge markings for section headers and meta text. */
+.label-caps {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Scrollbar — hairline, blends with instrument panel */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 6px; }

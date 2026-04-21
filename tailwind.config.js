@@ -32,8 +32,8 @@ export default {
         success: 'var(--success)',
       },
       fontFamily: {
-        sans: ['"SF Pro Display"', '"Segoe UI"', 'system-ui', 'sans-serif'],
-        mono: ['"SF Mono"', '"Cascadia Code"', '"Consolas"', 'monospace'],
+        sans: ['Inter', '"SF Pro Display"', '"Segoe UI"', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', '"SF Mono"', '"Cascadia Code"', '"Consolas"', 'monospace'],
       },
       borderRadius: {
         card: '8px',
