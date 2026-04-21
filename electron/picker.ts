@@ -289,8 +289,28 @@ ipcMain.handle('picker:capture', async () => {
   }
 });
 
-ipcMain.on('picker:result', (_e, payload: { hex: string; rgb: { r: number; g: number; b: number } }) => {
-  if (!payload || typeof payload.hex !== 'string') return;
+/**
+ * Validate the payload coming back from the picker overlay before trusting
+ * it enough to run color math on or forward to the renderer. The overlay
+ * is technically running in a separate, sandboxed window, but we treat its
+ * IPC as untrusted anyway — a malformed \`rgb\` object would crash the
+ * main process when we destructure numbers out of it.
+ */
+function isValidPickerResult(
+  value: unknown,
+): value is { hex: string; rgb: { r: number; g: number; b: number } } {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.hex !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(v.hex)) return false;
+  const rgb = v.rgb as Record<string, unknown> | undefined;
+  if (!rgb || typeof rgb !== 'object') return false;
+  const isByte = (n: unknown): n is number =>
+    typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 255;
+  return isByte(rgb.r) && isByte(rgb.g) && isByte(rgb.b);
+}
+
+ipcMain.on('picker:result', (_e, payload: unknown) => {
+  if (!isValidPickerResult(payload)) return;
   const { r, g, b } = payload.rgb;
   const hsl = rgbToHsl(r, g, b);
   const cmyk = rgbToCmyk(r, g, b);

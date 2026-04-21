@@ -59,9 +59,20 @@ function createMainWindow(): void {
     },
   });
 
-  // Open external links in the OS browser, never in-app.
+  // Open external links in the OS browser, never in-app. Whitelist only
+  // http(s) so an injected or malformed link can't coerce us into opening
+  // `file://`, `javascript:`, or a custom scheme that might launch another
+  // app. Anything we reject falls silently; the request was already denied
+  // by returning `action: 'deny'`.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        shell.openExternal(url);
+      }
+    } catch {
+      // Malformed URL — drop it.
+    }
     return { action: 'deny' };
   });
 

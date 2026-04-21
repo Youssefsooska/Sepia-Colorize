@@ -20,7 +20,8 @@ compression: maximum
 
 mac:
   category: public.app-category.graphics-design
-  icon: assets/icon.icns
+  # electron-builder will convert this 512×512 PNG into the .icns bundle.
+  icon: assets/icon.png
   # Ad-hoc signing: every binary inside the bundle is signed with a throwaway
   # identity so macOS doesn't reject it outright. Screen Recording permissions
   # are bound to this local identity, so each rebuild re-registers the app in
@@ -53,7 +54,8 @@ dmg:
       path: /Applications
 
 win:
-  icon: assets/icon.ico
+  # electron-builder converts this PNG into the multi-size .ico internally.
+  icon: assets/icon.png
   target:
     - nsis
     - portable
