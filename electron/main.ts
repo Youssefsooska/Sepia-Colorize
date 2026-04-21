@@ -10,7 +10,7 @@
  * Security: contextIsolation is on, nodeIntegration off. The renderer only
  * sees the narrow `window.sepia` API defined in preload.ts — never raw ipc.
  */
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell } from 'electron';
 import path from 'node:path';
 import { registerHotkeys, updateHotkey, unregisterAll } from './hotkeys';
 import { initTray, destroyTray } from './tray';
@@ -105,6 +105,23 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
+  // Auto-respond to getDisplayMedia requests with the display under the
+  // cursor. Without this, Electron pops its own "choose what to share"
+  // picker every time the color picker opens, which kills the fluidity.
+  // The picker window sets setContentProtection(true) so its own overlay
+  // doesn't appear in the captured stream.
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      if (!sources.length) return callback({});
+      const cursor = screen.getCursorScreenPoint();
+      const display = screen.getDisplayNearestPoint(cursor);
+      const match =
+        sources.find((s) => String(s.display_id) === String(display.id)) ||
+        sources[0];
+      callback({ video: match });
+    });
+  });
+
   createMainWindow();
   initTray();
   registerHotkeys();

@@ -12,7 +12,6 @@
  */
 import {
   BrowserWindow,
-  desktopCapturer,
   dialog,
   globalShortcut,
   ipcMain,
@@ -37,29 +36,39 @@ const __dirnameLocal = __dirname;
 let pickerWindow: BrowserWindow | null = null;
 
 // The overlay document is inlined here so no HTML file needs to ship alongside
-// the bundled JS. Single quotes are used inside so we can keep the outer
-// template literal readable.
+// the bundled JS. The overlay uses a LIVE MediaStream via getDisplayMedia
+// (not a one-shot screenshot) so the picker shows real-time pixels — video
+// playing, text being typed, animations all update under the loupe.
+//
+// The picker window itself is marked setContentProtection(true) in the main
+// process so the stream captures the screen WITHOUT the overlay's own loupe
+// or hex badge; otherwise we'd sample the loupe pixels instead of the
+// screen pixels underneath.
 const OVERLAY_HTML = `
 <!doctype html>
 <html><head><meta charset="UTF-8"><style>
   html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;background:transparent;cursor:none;color:#fff;font-family:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;user-select:none}
-  #bg{position:fixed;inset:0;width:100vw;height:100vh;image-rendering:pixelated}
-  #loupe{position:fixed;width:120px;height:120px;border-radius:50%;border:2px solid rgba(255,255,255,.9);box-shadow:0 4px 24px rgba(0,0,0,.5);pointer-events:none;overflow:hidden;transform:translate(-50%,-50%);background:#000}
+  /* Hidden working canvas — we never show it, only sample from it. */
+  #work{position:fixed;inset:0;width:100vw;height:100vh;visibility:hidden;pointer-events:none}
+  /* The loupe sits offset from the cursor so the pixel under the cursor is
+     visible through the transparent overlay. 18px below + right keeps it
+     out of the way on both small and large screens. */
+  #loupe{position:fixed;width:140px;height:140px;border-radius:50%;border:2px solid rgba(255,255,255,.9);box-shadow:0 8px 32px rgba(0,0,0,.55);pointer-events:none;overflow:hidden;background:#000}
   #loupe canvas{width:100%;height:100%;image-rendering:pixelated}
-  #crosshair{position:absolute;top:50%;left:50%;width:8px;height:8px;transform:translate(-50%,-50%);border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.6);pointer-events:none}
-  #hexBadge{position:fixed;pointer-events:none;background:rgba(20,20,20,.9);color:#fff;font-family:"SF Mono","Consolas",monospace;font-size:13px;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.15);transform:translate(-50%,0)}
+  #crosshair{position:absolute;top:50%;left:50%;width:9px;height:9px;transform:translate(-50%,-50%);border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.75);pointer-events:none;border-radius:1px}
+  #hexBadge{position:fixed;pointer-events:none;background:rgba(20,20,20,.92);color:#fff;font-family:"JetBrains Mono","SF Mono","Consolas",monospace;font-size:13px;padding:7px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.18);letter-spacing:0.02em;font-weight:600}
   /* A near-invisible body fill guarantees every click hits our window on
      macOS; a fully-transparent window can let clicks fall through. */
   body{background:rgba(0,0,0,0.01)}
-  #hint{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:6px 14px;background:rgba(20,20,20,.85);border:1px solid rgba(255,255,255,.15);border-radius:999px;color:#fff;font-size:12px;pointer-events:none}
+  #hint{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:7px 16px;background:rgba(20,20,20,.88);border:1px solid rgba(255,255,255,.18);border-radius:999px;color:#fff;font-size:12px;pointer-events:none;letter-spacing:0.04em}
 </style></head><body>
-  <canvas id="bg"></canvas>
-  <div id="loupe"><canvas id="loupeCanvas" width="15" height="15"></canvas><div id="crosshair"></div></div>
+  <canvas id="work"></canvas>
+  <div id="loupe"><canvas id="loupeCanvas" width="17" height="17"></canvas><div id="crosshair"></div></div>
   <div id="hexBadge">#------</div>
-  <div id="hint">Click to pick • Esc to cancel</div>
+  <div id="hint">Click to pick · Esc to cancel</div>
   <script>
-    const bg = document.getElementById('bg');
-    const bgCtx = bg.getContext('2d', { willReadFrequently: true });
+    const work = document.getElementById('work');
+    const workCtx = work.getContext('2d', { willReadFrequently: true });
     const loupeCanvas = document.getElementById('loupeCanvas');
     const loupeCtx = loupeCanvas.getContext('2d');
     loupeCtx.imageSmoothingEnabled = false;
@@ -68,69 +77,109 @@ const OVERLAY_HTML = `
     const hint = document.getElementById('hint');
     const toHex = (n) => n.toString(16).padStart(2, '0').toUpperCase();
     const rgbToHex = (r, g, b) => '#' + toHex(r) + toHex(g) + toHex(b);
+
     let ready = false;
-    // Ratio of device pixels on the backing canvas to CSS pixels on screen.
-    // Sampling is done in device pixels, mouse events arrive in CSS pixels.
-    let dpr = 1;
-    async function loadScreenshot() {
+    // Video element holds the live screen stream. We don't mount it in the
+    // DOM — it just drives drawImage every frame.
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+
+    // The last known mouse position in CSS pixels. Updated on every
+    // mousemove and used inside the raf loop so the loupe tracks the
+    // cursor smoothly even if mousemove events temporarily stop firing.
+    let mx = -1, my = -1;
+
+    async function start() {
       try {
-        const res = await window.sepiaPicker.capture();
-        if (!res || res.error) {
-          hint.textContent = res && res.error === 'permission-denied'
-            ? 'Screen Recording permission denied. Enable it in System Settings → Privacy.'
-            : 'Screen capture failed. Esc to cancel.';
-          return;
-        }
-        dpr = res.scaleFactor || 1;
-        bg.width = Math.round(res.displayWidth * dpr);
-        bg.height = Math.round(res.displayHeight * dpr);
-        // Keep the canvas visually full-screen regardless of backing size.
-        bg.style.width = '100vw'; bg.style.height = '100vh';
-        const img = new Image();
-        img.onload = () => {
-          bgCtx.drawImage(img, 0, 0, bg.width, bg.height);
-          ready = true;
-        };
-        img.onerror = () => { hint.textContent = 'Screenshot image failed to decode.'; };
-        img.src = res.dataUrl;
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: { ideal: 60 } },
+          audio: false,
+        });
+        video.srcObject = stream;
+        await new Promise((res) => { video.onloadedmetadata = res; });
+        await video.play();
+        // Size the working canvas to the raw video resolution so sampling
+        // reads from native pixels rather than a downscaled copy.
+        work.width = video.videoWidth;
+        work.height = video.videoHeight;
+        ready = true;
+        tick();
       } catch (err) {
-        console.warn('picker capture failed', err);
-        hint.textContent = 'Screen capture failed. Esc to cancel.';
+        console.warn('getDisplayMedia failed', err);
+        hint.textContent = 'Screen capture failed — check Screen Recording permission. Esc to cancel.';
       }
     }
+
+    function tick() {
+      if (!ready) return;
+      // Draw the current video frame into the hidden canvas so we always
+      // sample fresh pixels, regardless of whether the mouse moved.
+      try { workCtx.drawImage(video, 0, 0, work.width, work.height); } catch {}
+      if (mx >= 0) render(mx, my);
+      requestAnimationFrame(tick);
+    }
+
     function sampleAt(cssX, cssY) {
       if (!ready) return { r: 0, g: 0, b: 0 };
-      const px = Math.round(cssX * dpr);
-      const py = Math.round(cssY * dpr);
-      try { const d = bgCtx.getImageData(px, py, 1, 1).data; return { r: d[0], g: d[1], b: d[2] }; }
-      catch { return { r: 0, g: 0, b: 0 }; }
+      // Scale CSS coords to video-pixel coords; handles any DPR or resolution
+      // mismatch between the screen and the stream.
+      const sx = Math.round((cssX / window.innerWidth) * work.width);
+      const sy = Math.round((cssY / window.innerHeight) * work.height);
+      try {
+        const d = workCtx.getImageData(sx, sy, 1, 1).data;
+        return { r: d[0], g: d[1], b: d[2] };
+      } catch { return { r: 0, g: 0, b: 0 }; }
     }
-    function updateLoupe(e) {
-      const x = e.clientX, y = e.clientY;
-      loupe.style.left = x + 'px'; loupe.style.top = y + 'px';
-      if (ready) {
-        const px = x * dpr, py = y * dpr;
-        loupeCtx.clearRect(0, 0, 15, 15);
-        loupeCtx.drawImage(bg, Math.max(0, px - 7), Math.max(0, py - 7), 15, 15, 0, 0, 15, 15);
-      }
-      const { r, g, b } = sampleAt(x, y);
-      badge.textContent = rgbToHex(r, g, b);
-      badge.style.left = x + 'px'; badge.style.top = (y + 80) + 'px';
+
+    function render(cssX, cssY) {
+      // Position the loupe below-right of the cursor so it never covers
+      // the pixels being sampled. Flip to above-left near the screen edge.
+      const offset = 28;
+      let lx = cssX + offset, ly = cssY + offset;
+      if (lx + 140 > window.innerWidth) lx = cssX - offset - 140;
+      if (ly + 140 > window.innerHeight) ly = cssY - offset - 140;
+      loupe.style.left = lx + 'px';
+      loupe.style.top = ly + 'px';
+
+      // Zoomed 17×17 view around the cursor.
+      const sx = (cssX / window.innerWidth) * work.width;
+      const sy = (cssY / window.innerHeight) * work.height;
+      const half = 8;
+      loupeCtx.clearRect(0, 0, 17, 17);
+      try {
+        loupeCtx.drawImage(
+          work,
+          Math.max(0, Math.round(sx - half)),
+          Math.max(0, Math.round(sy - half)),
+          17, 17, 0, 0, 17, 17,
+        );
+      } catch {}
+
+      const c = sampleAt(cssX, cssY);
+      badge.textContent = rgbToHex(c.r, c.g, c.b);
+      // Badge hugs the loupe.
+      badge.style.left = (lx + 70 - 40) + 'px';
+      badge.style.top = (ly + 148) + 'px';
     }
+
     function pickAt(e) {
-      if (!ready) return; // Don't ship #000000 back when the capture never loaded.
+      if (!ready) return; // Don't ship #000000 back before the stream starts.
       const { r, g, b } = sampleAt(e.clientX, e.clientY);
       try { window.sepiaPicker.sendResult({ hex: rgbToHex(r, g, b), rgb: { r, g, b } }); }
       catch (err) { console.error('picker IPC missing', err); }
     }
-    window.addEventListener('mousemove', updateLoupe);
+
+    window.addEventListener('mousemove', (e) => { mx = e.clientX; my = e.clientY; });
     window.addEventListener('click', pickAt);
+
     // Right-click or Esc always attempts a cancel; if IPC is unavailable we
     // can't close from here, but the main-process Escape watchdog will.
     const cancelSafe = () => { try { window.sepiaPicker && window.sepiaPicker.cancel(); } catch {} };
     window.addEventListener('contextmenu', (e) => { e.preventDefault(); cancelSafe(); });
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelSafe(); });
-    loadScreenshot();
+
+    start();
   </script>
 </body></html>
 `;
@@ -184,6 +233,11 @@ export async function startPicking(): Promise<void> {
 
   pickerWindow.setAlwaysOnTop(true, 'screen-saver');
   pickerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // Hide the overlay from any screen capture — including our own live
+  // stream. Without this, the loupe and hex badge drawn on the overlay
+  // would appear in the video feed and we'd sample the loupe's pixels
+  // instead of the screen pixels beneath.
+  pickerWindow.setContentProtection(true);
   pickerWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(OVERLAY_HTML));
 
   // Safety net: register Escape in main so the user can always cancel, even
@@ -237,57 +291,6 @@ async function promptForScreenRecording(
 }
 
 // --- IPC from the picker overlay ------------------------------------------
-
-/**
- * Capture a thumbnail of the display the picker is currently on and hand it
- * back to the overlay as a data URL. This runs in the main process because
- * `desktopCapturer` is main-process-only in Electron 17+; calling it from a
- * preload script returns undefined and the overlay ends up sampling a blank
- * canvas (every pick reads as #000000).
- *
- * On macOS we first confirm Screen Recording permission — without it, the
- * thumbnail comes back blank, so we surface an explicit error instead of
- * silently handing back a black image.
- */
-ipcMain.handle('picker:capture', async () => {
-  if (process.platform === 'darwin') {
-    const status = systemPreferences.getMediaAccessStatus('screen');
-    if (status !== 'granted') {
-      return { error: 'permission-denied', status };
-    }
-  }
-  // Capture the display the picker window is on; fall back to the cursor's
-  // display if the picker isn't open yet for some reason.
-  const cursor = screen.getCursorScreenPoint();
-  const display =
-    (pickerWindow && screen.getDisplayMatching(pickerWindow.getBounds())) ||
-    screen.getDisplayNearestPoint(cursor);
-  const scale = display.scaleFactor || 1;
-  const thumbnailSize = {
-    width: Math.round(display.bounds.width * scale),
-    height: Math.round(display.bounds.height * scale),
-  };
-  try {
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize,
-    });
-    // Match to the right display — sources.display_id is a string on macOS,
-    // numeric elsewhere, so compare loosely.
-    const match =
-      sources.find((s) => String(s.display_id) === String(display.id)) ||
-      sources[0];
-    if (!match) return { error: 'no-sources' };
-    return {
-      dataUrl: match.thumbnail.toDataURL(),
-      displayWidth: display.bounds.width,
-      displayHeight: display.bounds.height,
-      scaleFactor: scale,
-    };
-  } catch (err) {
-    return { error: 'capture-failed', message: (err as Error).message };
-  }
-});
 
 /**
  * Validate the payload coming back from the picker overlay before trusting
