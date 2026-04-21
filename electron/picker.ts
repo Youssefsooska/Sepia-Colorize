@@ -10,7 +10,14 @@
  * Conversion from the picked RGB to HSL/CMYK happens here so the renderer
  * gets a fully-formed `PickedColorPayload` and doesn't need to do the math.
  */
-import { BrowserWindow, globalShortcut, ipcMain, screen } from 'electron';
+import {
+  BrowserWindow,
+  desktopCapturer,
+  globalShortcut,
+  ipcMain,
+  screen,
+  systemPreferences,
+} from 'electron';
 import path from 'node:path';
 import { rgbToHsl, rgbToCmyk } from '../src/utils/colorConversion';
 import { sendToRenderer } from './main';
@@ -49,36 +56,60 @@ const OVERLAY_HTML = `
     loupeCtx.imageSmoothingEnabled = false;
     const loupe = document.getElementById('loupe');
     const badge = document.getElementById('hexBadge');
+    const hint = document.getElementById('hint');
     const toHex = (n) => n.toString(16).padStart(2, '0').toUpperCase();
     const rgbToHex = (r, g, b) => '#' + toHex(r) + toHex(g) + toHex(b);
     let ready = false;
+    // Ratio of device pixels on the backing canvas to CSS pixels on screen.
+    // Sampling is done in device pixels, mouse events arrive in CSS pixels.
+    let dpr = 1;
     async function loadScreenshot() {
-      bg.width = window.innerWidth;
-      bg.height = window.innerHeight;
       try {
-        const sources = await window.sepiaPicker.getScreenSources();
-        if (!sources.length) return;
+        const res = await window.sepiaPicker.capture();
+        if (!res || res.error) {
+          hint.textContent = res && res.error === 'permission-denied'
+            ? 'Screen Recording permission denied. Enable it in System Settings → Privacy.'
+            : 'Screen capture failed. Esc to cancel.';
+          return;
+        }
+        dpr = res.scaleFactor || 1;
+        bg.width = Math.round(res.displayWidth * dpr);
+        bg.height = Math.round(res.displayHeight * dpr);
+        // Keep the canvas visually full-screen regardless of backing size.
+        bg.style.width = '100vw'; bg.style.height = '100vh';
         const img = new Image();
-        img.onload = () => { bgCtx.drawImage(img, 0, 0, bg.width, bg.height); ready = true; };
-        img.src = sources[0].thumbnailDataUrl;
-      } catch (err) { console.warn('picker capture failed', err); }
+        img.onload = () => {
+          bgCtx.drawImage(img, 0, 0, bg.width, bg.height);
+          ready = true;
+        };
+        img.onerror = () => { hint.textContent = 'Screenshot image failed to decode.'; };
+        img.src = res.dataUrl;
+      } catch (err) {
+        console.warn('picker capture failed', err);
+        hint.textContent = 'Screen capture failed. Esc to cancel.';
+      }
     }
-    function sampleAt(x, y) {
-      try { const d = bgCtx.getImageData(x, y, 1, 1).data; return { r: d[0], g: d[1], b: d[2] }; }
+    function sampleAt(cssX, cssY) {
+      if (!ready) return { r: 0, g: 0, b: 0 };
+      const px = Math.round(cssX * dpr);
+      const py = Math.round(cssY * dpr);
+      try { const d = bgCtx.getImageData(px, py, 1, 1).data; return { r: d[0], g: d[1], b: d[2] }; }
       catch { return { r: 0, g: 0, b: 0 }; }
     }
     function updateLoupe(e) {
       const x = e.clientX, y = e.clientY;
       loupe.style.left = x + 'px'; loupe.style.top = y + 'px';
       if (ready) {
+        const px = x * dpr, py = y * dpr;
         loupeCtx.clearRect(0, 0, 15, 15);
-        loupeCtx.drawImage(bg, Math.max(0, x - 7), Math.max(0, y - 7), 15, 15, 0, 0, 15, 15);
+        loupeCtx.drawImage(bg, Math.max(0, px - 7), Math.max(0, py - 7), 15, 15, 0, 0, 15, 15);
       }
       const { r, g, b } = sampleAt(x, y);
       badge.textContent = rgbToHex(r, g, b);
       badge.style.left = x + 'px'; badge.style.top = (y + 80) + 'px';
     }
     function pickAt(e) {
+      if (!ready) return; // Don't ship #000000 back when the capture never loaded.
       const { r, g, b } = sampleAt(e.clientX, e.clientY);
       try { window.sepiaPicker.sendResult({ hex: rgbToHex(r, g, b), rgb: { r, g, b } }); }
       catch (err) { console.error('picker IPC missing', err); }
@@ -146,6 +177,57 @@ export function cancelPicking(): void {
 }
 
 // --- IPC from the picker overlay ------------------------------------------
+
+/**
+ * Capture a thumbnail of the display the picker is currently on and hand it
+ * back to the overlay as a data URL. This runs in the main process because
+ * `desktopCapturer` is main-process-only in Electron 17+; calling it from a
+ * preload script returns undefined and the overlay ends up sampling a blank
+ * canvas (every pick reads as #000000).
+ *
+ * On macOS we first confirm Screen Recording permission — without it, the
+ * thumbnail comes back blank, so we surface an explicit error instead of
+ * silently handing back a black image.
+ */
+ipcMain.handle('picker:capture', async () => {
+  if (process.platform === 'darwin') {
+    const status = systemPreferences.getMediaAccessStatus('screen');
+    if (status !== 'granted') {
+      return { error: 'permission-denied', status };
+    }
+  }
+  // Capture the display the picker window is on; fall back to the cursor's
+  // display if the picker isn't open yet for some reason.
+  const cursor = screen.getCursorScreenPoint();
+  const display =
+    (pickerWindow && screen.getDisplayMatching(pickerWindow.getBounds())) ||
+    screen.getDisplayNearestPoint(cursor);
+  const scale = display.scaleFactor || 1;
+  const thumbnailSize = {
+    width: Math.round(display.bounds.width * scale),
+    height: Math.round(display.bounds.height * scale),
+  };
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize,
+    });
+    // Match to the right display — sources.display_id is a string on macOS,
+    // numeric elsewhere, so compare loosely.
+    const match =
+      sources.find((s) => String(s.display_id) === String(display.id)) ||
+      sources[0];
+    if (!match) return { error: 'no-sources' };
+    return {
+      dataUrl: match.thumbnail.toDataURL(),
+      displayWidth: display.bounds.width,
+      displayHeight: display.bounds.height,
+      scaleFactor: scale,
+    };
+  } catch (err) {
+    return { error: 'capture-failed', message: (err as Error).message };
+  }
+});
 
 ipcMain.on('picker:result', (_e, payload: { hex: string; rgb: { r: number; g: number; b: number } }) => {
   if (!payload || typeof payload.hex !== 'string') return;
