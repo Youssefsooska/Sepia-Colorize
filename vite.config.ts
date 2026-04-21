@@ -1,24 +1,32 @@
 // Vite configuration for the Sepia renderer + Electron main/preload bundles.
-// vite-plugin-electron handles compiling electron/*.ts into dist-electron/ during
-// dev so the app can launch via `npm run dev`.
+// We use the array form of vite-plugin-electron so we can compile the main
+// process, the renderer preload, AND the separate picker-overlay preload
+// (each in its own Vite sub-build) — /simple only accepts one preload.
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import electron from 'vite-plugin-electron/simple';
+import electron from 'vite-plugin-electron';
+import rendererPlugin from 'vite-plugin-electron-renderer';
 import path from 'node:path';
 
 export default defineConfig({
   plugins: [
     react(),
-    electron({
-      main: {
+    electron([
+      {
         entry: 'electron/main.ts',
+        vite: { build: { outDir: 'dist-electron' } },
       },
-      preload: {
-        input: path.join(__dirname, 'electron/preload.ts'),
+      {
+        entry: 'electron/preload.ts',
+        onstart(options) { options.reload(); },
+        vite: { build: { outDir: 'dist-electron' } },
       },
-      // Renderer is the React app under src/ — served by Vite dev server
-      renderer: {},
-    }),
+      {
+        entry: 'electron/pickerPreload.ts',
+        vite: { build: { outDir: 'dist-electron' } },
+      },
+    ]),
+    rendererPlugin(),
   ],
   resolve: {
     alias: {

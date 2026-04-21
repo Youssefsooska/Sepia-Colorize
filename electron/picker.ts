@@ -10,7 +10,7 @@
  * Conversion from the picked RGB to HSL/CMYK happens here so the renderer
  * gets a fully-formed `PickedColorPayload` and doesn't need to do the math.
  */
-import { BrowserWindow, ipcMain, screen } from 'electron';
+import { BrowserWindow, globalShortcut, ipcMain, screen } from 'electron';
 import path from 'node:path';
 import { rgbToHsl, rgbToCmyk } from '../src/utils/colorConversion';
 import { sendToRenderer } from './main';
@@ -32,10 +32,15 @@ const OVERLAY_HTML = `
   #loupe canvas{width:100%;height:100%;image-rendering:pixelated}
   #crosshair{position:absolute;top:50%;left:50%;width:8px;height:8px;transform:translate(-50%,-50%);border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.6);pointer-events:none}
   #hexBadge{position:fixed;pointer-events:none;background:rgba(20,20,20,.9);color:#fff;font-family:"SF Mono","Consolas",monospace;font-size:13px;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.15);transform:translate(-50%,0)}
+  /* A near-invisible body fill guarantees every click hits our window on
+     macOS; a fully-transparent window can let clicks fall through. */
+  body{background:rgba(0,0,0,0.01)}
+  #hint{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:6px 14px;background:rgba(20,20,20,.85);border:1px solid rgba(255,255,255,.15);border-radius:999px;color:#fff;font-size:12px;pointer-events:none}
 </style></head><body>
   <canvas id="bg"></canvas>
   <div id="loupe"><canvas id="loupeCanvas" width="15" height="15"></canvas><div id="crosshair"></div></div>
   <div id="hexBadge">#------</div>
+  <div id="hint">Click to pick • Esc to cancel</div>
   <script>
     const bg = document.getElementById('bg');
     const bgCtx = bg.getContext('2d', { willReadFrequently: true });
@@ -75,11 +80,16 @@ const OVERLAY_HTML = `
     }
     function pickAt(e) {
       const { r, g, b } = sampleAt(e.clientX, e.clientY);
-      window.sepiaPicker.sendResult({ hex: rgbToHex(r, g, b), rgb: { r, g, b } });
+      try { window.sepiaPicker.sendResult({ hex: rgbToHex(r, g, b), rgb: { r, g, b } }); }
+      catch (err) { console.error('picker IPC missing', err); }
     }
     window.addEventListener('mousemove', updateLoupe);
     window.addEventListener('click', pickAt);
-    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.sepiaPicker.cancel(); });
+    // Right-click or Esc always attempts a cancel; if IPC is unavailable we
+    // can't close from here, but the main-process Escape watchdog will.
+    const cancelSafe = () => { try { window.sepiaPicker && window.sepiaPicker.cancel(); } catch {} };
+    window.addEventListener('contextmenu', (e) => { e.preventDefault(); cancelSafe(); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelSafe(); });
     loadScreenshot();
   </script>
 </body></html>
@@ -117,7 +127,14 @@ export function startPicking(): void {
   pickerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   pickerWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(OVERLAY_HTML));
 
-  pickerWindow.on('closed', () => { pickerWindow = null; });
+  // Safety net: register Escape in main so the user can always cancel, even
+  // if the picker renderer's own key listener fails to run.
+  globalShortcut.register('Escape', () => cancelPicking());
+
+  pickerWindow.on('closed', () => {
+    pickerWindow = null;
+    globalShortcut.unregister('Escape');
+  });
 }
 
 export function cancelPicking(): void {
