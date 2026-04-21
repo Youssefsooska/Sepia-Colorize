@@ -17,6 +17,10 @@ files:
 # Leave behind any large dev-only files; sharpens the packaged bundle.
 asar: true
 compression: maximum
+# Re-sign the packaged .app with a real Sepia bundle identifier so macOS
+# TCC doesn't lump us in with every other Electron app (see comment inside
+# the hook for the full rationale).
+afterPack: scripts/after-pack.mjs
 
 mac:
   category: public.app-category.graphics-design
