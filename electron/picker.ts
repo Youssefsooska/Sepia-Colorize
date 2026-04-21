@@ -12,6 +12,7 @@
  */
 import {
   BrowserWindow,
+  app,
   dialog,
   globalShortcut,
   ipcMain,
@@ -19,6 +20,7 @@ import {
   shell,
   systemPreferences,
 } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import { rgbToHsl, rgbToCmyk } from '../src/utils/colorConversion';
 import { getMainWindow, sendToRenderer } from './main';
@@ -107,7 +109,10 @@ const OVERLAY_HTML = `
         tick();
       } catch (err) {
         console.warn('getDisplayMedia failed', err);
-        hint.textContent = 'Screen capture failed — check Screen Recording permission. Esc to cancel.';
+        const msg = err && err.message ? err.message : String(err);
+        const name = err && err.name ? err.name : 'Error';
+        hint.textContent = 'Screen capture failed: ' + name + ' — ' + msg + '. Esc to cancel.';
+        try { window.sepiaPicker.logError(name + ': ' + msg); } catch {}
       }
     }
 
@@ -185,6 +190,22 @@ const OVERLAY_HTML = `
 `;
 
 /**
+ * Write the inline overlay HTML to a stable path inside Electron's
+ * per-user temp directory and return that path. Done once per app run and
+ * cached thereafter. We inline the HTML in TypeScript so the renderer
+ * stays self-contained, but Chromium requires a real origin for
+ * `getDisplayMedia`, so we need to actually land it on disk.
+ */
+let overlayFilePath: string | null = null;
+function ensureOverlayFile(): string {
+  if (overlayFilePath && fs.existsSync(overlayFilePath)) return overlayFilePath;
+  const target = path.join(app.getPath('temp'), 'sepia-picker-overlay.html');
+  fs.writeFileSync(target, OVERLAY_HTML, 'utf8');
+  overlayFilePath = target;
+  return target;
+}
+
+/**
  * Open the picker overlay on whatever display the cursor is currently on.
  *
  * On macOS, we require Screen Recording permission before even showing the
@@ -238,7 +259,12 @@ export async function startPicking(): Promise<void> {
   // would appear in the video feed and we'd sample the loupe's pixels
   // instead of the screen pixels beneath.
   pickerWindow.setContentProtection(true);
-  pickerWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(OVERLAY_HTML));
+  // Load the overlay from a real file on disk rather than a data: URL.
+  // Chromium denies `navigator.mediaDevices.getDisplayMedia` on data-URL
+  // origins (they're null-origin), and the picker silently fails with
+  // "NotAllowedError" the moment it tries to start a stream. A file:/
+  // origin is a valid secure context so the capture proceeds.
+  pickerWindow.loadFile(ensureOverlayFile());
 
   // Safety net: register Escape in main so the user can always cancel, even
   // if the picker renderer's own key listener fails to run.
@@ -332,3 +358,11 @@ ipcMain.on('picker:result', (_e, payload: unknown) => {
 });
 
 ipcMain.on('picker:cancel', () => cancelPicking());
+
+// Diagnostic channel — overlay forwards any fatal error so we can inspect it
+// from the main-process log (and the packaged app's Console.app entries).
+ipcMain.on('picker:log-error', (_e, message: unknown) => {
+  if (typeof message === 'string') {
+    console.error('[sepia picker]', message);
+  }
+});

@@ -20,4 +20,5 @@ interface PickerResult {
 contextBridge.exposeInMainWorld('sepiaPicker', {
   sendResult: (result: PickerResult) => ipcRenderer.send('picker:result', result),
   cancel: () => ipcRenderer.send('picker:cancel'),
+  logError: (message: string) => ipcRenderer.send('picker:log-error', String(message)),
 });
