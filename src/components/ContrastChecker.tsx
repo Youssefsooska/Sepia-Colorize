@@ -25,12 +25,12 @@ function SwatchPicker({ value, onChange, label }: SwatchPickerProps): JSX.Elemen
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => { try { hexToRgb(draft); onChange(draft); } catch { setDraft(value); } }}
-        className="w-24 rounded-button border border-border-subtle bg-bg-app px-2 py-1 font-mono text-sm"
+        className="w-24 rounded-button border border-border-subtle bg-app px-2 py-1 font-mono text-sm"
       />
       <select
         value=""
         onChange={(e) => { if (e.target.value) { setDraft(e.target.value); onChange(e.target.value); } }}
-        className="rounded-button border border-border-subtle bg-bg-app px-2 py-1 text-xs"
+        className="rounded-button border border-border-subtle bg-app px-2 py-1 text-xs"
       >
         <option value="">from collection…</option>
         {Object.values(colors).map((c) => (

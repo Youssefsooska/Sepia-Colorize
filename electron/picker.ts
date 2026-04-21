@@ -7,13 +7,11 @@
  */
 import { BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { rgbToHsl, rgbToCmyk } from '../src/utils/colorConversion.js';
-import { sendToRenderer } from './main.js';
+import { rgbToHsl, rgbToCmyk } from '../src/utils/colorConversion';
+import { sendToRenderer } from './main';
 import type { PickedColorPayload } from '../src/types';
 
-const __filename = typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url);
-const __dirnameLocal = path.dirname(__filename);
+const __dirnameLocal = __dirname;
 
 let pickerWindow: BrowserWindow | null = null;
 

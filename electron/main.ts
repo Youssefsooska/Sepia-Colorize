@@ -12,16 +12,14 @@
  */
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { registerHotkeys, updateHotkey, unregisterAll } from './hotkeys.js';
-import { initTray, destroyTray } from './tray.js';
-import { saveExport } from './exporter.js';
-import { startPicking, cancelPicking } from './picker.js';
+import { registerHotkeys, updateHotkey, unregisterAll } from './hotkeys';
+import { initTray, destroyTray } from './tray';
+import { saveExport } from './exporter';
+import { startPicking, cancelPicking } from './picker';
 import type { HotkeyUpdatePayload, ExportSavePayload } from '../src/types';
 
-// __dirname under ESM — compatible with Vite's electron plugin output.
-const __filename = typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url);
-const __dirnameLocal = path.dirname(__filename);
+// vite-plugin-electron emits CommonJS, so Node's __dirname is already defined.
+const __dirnameLocal = __dirname;
 
 let mainWindow: BrowserWindow | null = null;
 

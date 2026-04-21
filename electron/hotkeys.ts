@@ -10,8 +10,8 @@
 import { globalShortcut } from 'electron';
 import Store from 'electron-store';
 import type { HotkeyUpdatePayload, HotkeyUpdateResult } from '../src/types';
-import { startPicking } from './picker.js';
-import { toggleMainWindow } from './main.js';
+import { startPicking } from './picker';
+import { toggleMainWindow } from './main';
 
 interface HotkeysSchema {
   pickColor: string;

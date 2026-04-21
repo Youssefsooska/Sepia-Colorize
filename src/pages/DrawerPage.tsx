@@ -114,7 +114,7 @@ export function DrawerPage({ onOpenSettings }: DrawerPageProps): JSX.Element {
               value={newCollectionDraft}
               onChange={(e) => setNewCollectionDraft(e.target.value)}
               placeholder="Collection name"
-              className="flex-1 rounded-button border border-border-subtle bg-bg-app px-3 py-1.5 text-sm outline-none focus:border-border-accent"
+              className="flex-1 rounded-button border border-border-subtle bg-app px-3 py-1.5 text-sm outline-none focus:border-border-accent"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && newCollectionDraft.trim()) {
                   createCollection(newCollectionDraft.trim());

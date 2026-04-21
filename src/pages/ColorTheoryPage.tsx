@@ -74,7 +74,7 @@ export function ColorTheoryPage(): JSX.Element {
           <div className="mt-4">
             <label className="text-xs text-text-secondary">Or pick from your collections:</label>
             <select
-              className="mt-1 w-full rounded-button border border-border-subtle bg-bg-app px-2 py-1 text-sm"
+              className="mt-1 w-full rounded-button border border-border-subtle bg-app px-2 py-1 text-sm"
               onChange={(e) => {
                 const c = colors[e.target.value];
                 if (c) pickFromCollections(c);
@@ -103,7 +103,7 @@ export function ColorTheoryPage(): JSX.Element {
             <select
               value={harmony}
               onChange={(e) => setHarmony(e.target.value as HarmonyType)}
-              className="mt-1 w-full rounded-button border border-border-subtle bg-bg-app px-2 py-1 text-sm"
+              className="mt-1 w-full rounded-button border border-border-subtle bg-app px-2 py-1 text-sm"
             >
               {HARMONY_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>

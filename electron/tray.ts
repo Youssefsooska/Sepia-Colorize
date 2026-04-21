@@ -9,13 +9,11 @@
  */
 import { Tray, Menu, nativeImage, app } from 'electron';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { startPicking } from './picker.js';
-import { getMainWindow, toggleMainWindow } from './main.js';
-import { getCurrentHotkeys } from './hotkeys.js';
+import { startPicking } from './picker';
+import { getMainWindow, toggleMainWindow } from './main';
+import { getCurrentHotkeys } from './hotkeys';
 
-const __filename = typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url);
-const __dirnameLocal = path.dirname(__filename);
+const __dirnameLocal = __dirname;
 
 let tray: Tray | null = null;
 

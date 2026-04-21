@@ -78,7 +78,7 @@ export function ExportModal({ open, onClose, collection }: ExportModalProps): JS
           <select
             value={format}
             onChange={(e) => setFormat(e.target.value as ExportFormat)}
-            className="rounded-button border border-border-subtle bg-bg-app px-2 py-1 text-sm"
+            className="rounded-button border border-border-subtle bg-app px-2 py-1 text-sm"
           >
             {(Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[]).map((f) => (
               <option key={f} value={f}>{EXPORT_FORMAT_LABELS[f]}</option>
@@ -91,7 +91,7 @@ export function ExportModal({ open, onClose, collection }: ExportModalProps): JS
           <textarea
             readOnly
             value={result.isBinary ? '[Binary .ase — click "Save File" to write to disk]' : result.content}
-            className="h-56 w-full resize-none rounded-button border border-border-subtle bg-bg-app p-2 font-mono text-xs text-text-primary"
+            className="h-56 w-full resize-none rounded-button border border-border-subtle bg-app p-2 font-mono text-xs text-text-primary"
           />
         </div>
 

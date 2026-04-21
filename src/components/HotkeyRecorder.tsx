@@ -47,7 +47,7 @@ export function HotkeyRecorder({ shortcut, onChange, platform }: HotkeyRecorderP
         <span className="text-text-secondary">Press new shortcut...</span>
       ) : (
         symbols.map((s, i) => (
-          <span key={i} className="rounded border border-border-subtle bg-bg-app px-1.5 py-0.5">
+          <span key={i} className="rounded border border-border-subtle bg-app px-1.5 py-0.5">
             {s}
           </span>
         ))

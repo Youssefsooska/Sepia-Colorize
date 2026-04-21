@@ -7,6 +7,7 @@
  * color list so the same visual rhythm is preserved for the aggregate view.
  */
 import { useState } from 'react';
+import type { MouseEvent, DragEvent } from 'react';
 import { SavedColor } from '../types';
 import { ColorCard, ContextMenu } from './ColorCard';
 import { useColorStore } from '../stores/colorStore';
@@ -41,13 +42,13 @@ export function CollectionSection({
   // per spec; user collections show nothing until expanded.
   const visibleColors = expanded ? colors : isAllColors ? colors.slice(0, 4) : [];
 
-  const onHeaderContext = (e: React.MouseEvent) => {
+  const onHeaderContext = (e: MouseEvent) => {
     if (isAllColors) return;
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY });
   };
 
-  const onDrop = (e: React.DragEvent) => {
+  const onDrop = (e: DragEvent) => {
     if (!collectionId) return;
     const colorId = e.dataTransfer.getData('text/sepia-color-id');
     if (colorId) moveColorToCollection(colorId, collectionId);

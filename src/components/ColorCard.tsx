@@ -6,6 +6,7 @@
  * collections with the native HTML5 drag API.
  */
 import { useState } from 'react';
+import type { MouseEvent, DragEvent } from 'react';
 import { SavedColor } from '../types';
 import { formatRgb, formatHsl, formatCmyk } from '../utils/colorConversion';
 import { relativeTime } from '../utils/time';
@@ -14,10 +15,12 @@ import { showToast } from './Toast';
 
 interface ColorCardProps {
   color: SavedColor;
-  collectionId?: string; // present when the card lives inside a user collection
+  /** Present when the card lives inside a user collection. Reserved for
+   * future per-collection actions (e.g. remove from this collection). */
+  collectionId?: string;
 }
 
-export function ColorCard({ color, collectionId }: ColorCardProps): JSX.Element {
+export function ColorCard({ color, collectionId: _collectionId }: ColorCardProps): JSX.Element {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const deleteColor = useColorStore((s) => s.deleteColor);
   const moveColorToCollection = useColorStore((s) => s.moveColorToCollection);
@@ -32,12 +35,12 @@ export function ColorCard({ color, collectionId }: ColorCardProps): JSX.Element 
 
   const onClick = () => copy(color.hex, color.hex);
 
-  const onContextMenu = (e: React.MouseEvent) => {
+  const onContextMenu = (e: MouseEvent) => {
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY });
   };
 
-  const onDragStart = (e: React.DragEvent) => {
+  const onDragStart = (e: DragEvent) => {
     e.dataTransfer.setData('text/sepia-color-id', color.id);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -92,8 +95,6 @@ export function ColorCard({ color, collectionId }: ColorCardProps): JSX.Element 
           ]}
         />
       )}
-      {/* Note: collectionId prop is reserved for future per-collection actions */}
-      {collectionId ? null : null}
     </div>
   );
 }

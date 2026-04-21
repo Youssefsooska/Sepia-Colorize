@@ -7,12 +7,14 @@
  * and revert the store to the previous value.
  */
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useColorStore } from '../stores/colorStore';
 import { HotkeyRecorder } from '../components/HotkeyRecorder';
 import { showToast } from '../components/Toast';
 import { ColorFormat, ExportFormat } from '../types';
 import { EXPORT_FORMAT_LABELS } from '../utils/exportFormats';
+import { rgbToHsl, rgbToCmyk } from '../utils/colorConversion';
 
 export function SettingsPage(): JSX.Element {
   const settings = useSettingsStore();
@@ -143,7 +145,7 @@ export function SettingsPage(): JSX.Element {
           <select
             value={settings.defaultColorFormat}
             onChange={(e) => settings.setDefaultColorFormat(e.target.value as ColorFormat)}
-            className="rounded-button border border-border-subtle bg-bg-app px-2 py-1 text-sm"
+            className="rounded-button border border-border-subtle bg-app px-2 py-1 text-sm"
           >
             <option value="hex">HEX</option>
             <option value="rgb">RGB</option>
@@ -158,7 +160,7 @@ export function SettingsPage(): JSX.Element {
           <select
             value={settings.defaultExportFormat}
             onChange={(e) => settings.setDefaultExportFormat(e.target.value as ExportFormat)}
-            className="rounded-button border border-border-subtle bg-bg-app px-2 py-1 text-sm"
+            className="rounded-button border border-border-subtle bg-app px-2 py-1 text-sm"
           >
             {(Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[]).map((f) => (
               <option key={f} value={f}>{EXPORT_FORMAT_LABELS[f]}</option>
@@ -199,7 +201,7 @@ export function SettingsPage(): JSX.Element {
 
 // --- Layout primitives ----------------------------------------------------
 
-function Section({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+function Section({ title, children }: { title: string; children: ReactNode }): JSX.Element {
   return (
     <section className="space-y-2">
       <h2 className="text-[11px] font-medium uppercase tracking-wider text-text-muted">{title}</h2>
@@ -208,7 +210,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
+function Row({ label, children }: { label: string; children: ReactNode }): JSX.Element {
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-sm text-text-primary">{label}</span>
@@ -262,8 +264,8 @@ function importGpl(text: string): void {
     const saved = store.addColor({
       hex,
       rgb: { r: e.r, g: e.g, b: e.b },
-      hsl: { h: 0, s: 0, l: 0 }, // placeholder — real HSL filled when re-exporting
-      cmyk: { c: 0, m: 0, y: 0, k: 0 },
+      hsl: rgbToHsl(e.r, e.g, e.b),
+      cmyk: rgbToCmyk(e.r, e.g, e.b),
       timestamp: Date.now(),
     });
     store.moveColorToCollection(saved.id, col.id);
