@@ -1,5 +1,10 @@
 # electron-builder configuration for packaging Sepia.
 # Produces a .dmg for macOS and an NSIS installer + portable .exe for Windows.
+#
+# The Mac build is intentionally ad-hoc signed (identity: null) so it can be
+# built on any machine without an Apple Developer account. For App Store or
+# public-distribution builds, set identity to a Developer ID certificate and
+# flip notarize on.
 appId: com.sepia.app
 productName: Sepia
 directories:
@@ -9,12 +14,44 @@ files:
   - dist/**
   - dist-electron/**
   - package.json
+# Leave behind any large dev-only files; sharpens the packaged bundle.
+asar: true
+compression: maximum
+
 mac:
-  category: public.app-category.developer-tools
+  category: public.app-category.graphics-design
   icon: assets/icon.icns
+  # Ad-hoc signing: every binary inside the bundle is signed with a throwaway
+  # identity so macOS doesn't reject it outright. Screen Recording permissions
+  # are bound to this local identity, so each rebuild re-registers the app in
+  # System Settings. For a stable signed identity, replace null with your
+  # Developer ID Application name.
+  identity: null
+  notarize: false
+  hardenedRuntime: false
+  gatekeeperAssess: false
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+
+dmg:
+  # Set a simple layout so the .dmg feels polished on first-open.
+  title: ${productName} ${version}
+  contents:
+    - x: 140
+      y: 200
+      type: file
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications
+
 win:
   icon: assets/icon.ico
   target:

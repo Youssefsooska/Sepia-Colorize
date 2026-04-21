@@ -13,15 +13,24 @@
 import {
   BrowserWindow,
   desktopCapturer,
+  dialog,
   globalShortcut,
   ipcMain,
   screen,
+  shell,
   systemPreferences,
 } from 'electron';
 import path from 'node:path';
 import { rgbToHsl, rgbToCmyk } from '../src/utils/colorConversion';
-import { sendToRenderer } from './main';
+import { getMainWindow, sendToRenderer } from './main';
 import type { PickedColorPayload } from '../src/types';
+
+// Deep link that opens System Settings → Privacy & Security → Screen &
+// System Audio Recording on macOS 10.15 through 15. Using the private
+// `x-apple.systempreferences:` URL scheme is the blessed way to land on a
+// specific privacy pane; no public API takes the user there directly.
+const MAC_SCREEN_RECORDING_PREFS =
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
 
 const __dirnameLocal = __dirname;
 
@@ -126,9 +135,28 @@ const OVERLAY_HTML = `
 </body></html>
 `;
 
-/** Open the picker overlay on whatever display the cursor is currently on. */
-export function startPicking(): void {
+/**
+ * Open the picker overlay on whatever display the cursor is currently on.
+ *
+ * On macOS, we require Screen Recording permission before even showing the
+ * overlay — picking without it returns all-black pixels. If the permission
+ * is missing we surface a modal dialog with a direct shortcut to the right
+ * pane in System Settings; opening the fullscreen overlay in that state
+ * would be confusing and would also swallow the user's next click.
+ */
+export async function startPicking(): Promise<void> {
   if (pickerWindow) return; // Already picking — ignore repeat triggers.
+
+  if (process.platform === 'darwin') {
+    const status = systemPreferences.getMediaAccessStatus('screen');
+    // Anything other than 'granted' means the capture will return all-black
+    // pixels, so don't waste a fullscreen overlay — prompt for permission
+    // first. 'unknown' exists only on non-macOS and won't hit this branch.
+    if (status !== 'granted') {
+      await promptForScreenRecording(status);
+      return;
+    }
+  }
 
   const point = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(point);
@@ -173,6 +201,38 @@ export function cancelPicking(): void {
     pickerWindow.close();
     pickerWindow = null;
     sendToRenderer('picker:cancelled');
+  }
+}
+
+/**
+ * Show a modal prompting the user to grant Screen Recording permission and,
+ * if they agree, deep-link into the right System Settings pane. We can't
+ * open the pane directly from code — macOS requires user action — so the
+ * "Open Settings" button is the only thing that'll land the user there.
+ */
+async function promptForScreenRecording(
+  status: 'not-determined' | 'denied' | 'restricted' | 'granted' | 'unknown',
+): Promise<void> {
+  const parent = getMainWindow();
+  const detail =
+    status === 'not-determined'
+      ? 'Open System Settings → Privacy & Security → Screen & System Audio Recording, enable Sepia, then relaunch the app.'
+      : 'Sepia is listed in System Settings → Privacy & Security → Screen & System Audio Recording but permission is denied. Toggle it on and relaunch the app.';
+  const options: Electron.MessageBoxOptions = {
+    type: 'warning',
+    title: 'Screen Recording permission needed',
+    message: 'Sepia needs permission to record the screen so it can sample pixel colors.',
+    detail,
+    buttons: ['Open System Settings', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  };
+  const { response } = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options);
+  if (response === 0) {
+    await shell.openExternal(MAC_SCREEN_RECORDING_PREFS);
   }
 }
 
