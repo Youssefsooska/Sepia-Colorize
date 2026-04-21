@@ -11,6 +11,8 @@ import type { ReactNode } from 'react';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useColorStore } from '../stores/colorStore';
 import { HotkeyRecorder } from '../components/HotkeyRecorder';
+import { Toggle, SettingsRow } from '../components/Toggle';
+import { Segmented, ChipGroup } from '../components/Segmented';
 import { showToast } from '../components/Toast';
 import { ColorFormat, ExportFormat } from '../types';
 import { EXPORT_FORMAT_LABELS } from '../utils/exportFormats';
@@ -106,72 +108,99 @@ export function SettingsPage(): JSX.Element {
       </header>
 
       <Section title="HOTKEYS" aside="click to rebind · esc to cancel">
-        <Row label="Pick color from screen">
+        <SettingsRow
+          label="Pick color from screen"
+          description="Opens the fullscreen magnifier loupe."
+        >
           <HotkeyRecorder
             shortcut={settings.hotkeys.pickColor}
             platform={platform}
             onChange={(v) => updateHotkey('pickColor', v)}
           />
-        </Row>
-        <Row label="Toggle drawer window">
+        </SettingsRow>
+        <SettingsRow
+          label="Toggle drawer window"
+          description="Show or hide the main Sepia window."
+        >
           <HotkeyRecorder
             shortcut={settings.hotkeys.toggleDrawer}
             platform={platform}
             onChange={(v) => updateHotkey('toggleDrawer', v)}
           />
-        </Row>
-        <p className="text-xs text-text-muted mt-2">
-          Click a shortcut to re-record. Press Esc to cancel, Enter to confirm.
-        </p>
+        </SettingsRow>
       </Section>
 
       <Section title="GENERAL">
-        <Checkbox
+        <SettingsRow
           label="Launch at login"
-          checked={settings.launchAtLogin}
-          onChange={settings.setLaunchAtLogin}
-        />
-        <Checkbox
-          label="Show in menu bar / system tray"
-          checked={settings.showInTray}
-          onChange={settings.setShowInTray}
-        />
-        <Checkbox
+          description="Start Sepia in the background when you sign in."
+        >
+          <Toggle
+            checked={settings.launchAtLogin}
+            onChange={settings.setLaunchAtLogin}
+            label="Launch at login"
+          />
+        </SettingsRow>
+        <SettingsRow
+          label="Show in menu bar"
+          description="Keep a Sepia icon in the system tray / menu bar."
+        >
+          <Toggle
+            checked={settings.showInTray}
+            onChange={settings.setShowInTray}
+            label="Show in menu bar"
+          />
+        </SettingsRow>
+        <SettingsRow
           label="Play sound on color pick"
-          checked={settings.playSoundOnPick}
-          onChange={settings.setPlaySoundOnPick}
-        />
-        <Checkbox
-          label="Auto-copy HEX to clipboard on pick"
-          checked={settings.autoCopyOnPick}
-          onChange={settings.setAutoCopyOnPick}
-        />
-        <Row label="Default color format">
-          <select
+          description="A subtle click confirms every pick."
+        >
+          <Toggle
+            checked={settings.playSoundOnPick}
+            onChange={settings.setPlaySoundOnPick}
+            label="Play sound on color pick"
+          />
+        </SettingsRow>
+        <SettingsRow
+          label="Auto-copy HEX on pick"
+          description="Put the picked hex straight onto your clipboard."
+        >
+          <Toggle
+            checked={settings.autoCopyOnPick}
+            onChange={settings.setAutoCopyOnPick}
+            label="Auto-copy HEX on pick"
+          />
+        </SettingsRow>
+        <SettingsRow
+          label="Default color format"
+          description="Which representation lands on the clipboard when you click a swatch."
+        >
+          <Segmented
             value={settings.defaultColorFormat}
-            onChange={(e) => settings.setDefaultColorFormat(e.target.value as ColorFormat)}
-            className="rounded-button border border-border-subtle bg-app px-2 py-1 text-sm"
-          >
-            <option value="hex">HEX</option>
-            <option value="rgb">RGB</option>
-            <option value="hsl">HSL</option>
-            <option value="cmyk">CMYK</option>
-          </select>
-        </Row>
+            onChange={(v) => settings.setDefaultColorFormat(v as ColorFormat)}
+            options={[
+              { value: 'hex', label: 'HEX' },
+              { value: 'rgb', label: 'RGB' },
+              { value: 'hsl', label: 'HSL' },
+              { value: 'cmyk', label: 'CMYK' },
+            ]}
+          />
+        </SettingsRow>
       </Section>
 
-      <Section title="EXPORT DEFAULTS">
-        <Row label="Default export format">
-          <select
-            value={settings.defaultExportFormat}
-            onChange={(e) => settings.setDefaultExportFormat(e.target.value as ExportFormat)}
-            className="rounded-button border border-border-subtle bg-app px-2 py-1 text-sm"
-          >
-            {(Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[]).map((f) => (
-              <option key={f} value={f}>{EXPORT_FORMAT_LABELS[f]}</option>
-            ))}
-          </select>
-        </Row>
+      <Section
+        title="EXPORT DEFAULTS"
+        aside={`${Object.keys(EXPORT_FORMAT_LABELS).length} formats available`}
+      >
+        <ChipGroup<ExportFormat>
+          value={settings.defaultExportFormat}
+          onChange={settings.setDefaultExportFormat}
+          options={(Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[]).map((f) => ({
+            value: f,
+            label: EXPORT_FORMAT_LABELS[f],
+          }))}
+          ariaLabel="Default export format"
+        />
       </Section>
 
       <Section title="DATA" aside="stored locally · never leaves this machine">
@@ -226,29 +255,6 @@ function Section({
       </header>
       <div className="rounded-card bg-surface p-5 space-y-3">{children}</div>
     </section>
-  );
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }): JSX.Element {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-sm text-text-primary">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }): JSX.Element {
-  return (
-    <label className="flex cursor-pointer items-center gap-2 text-sm">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-accent"
-      />
-      {label}
-    </label>
   );
 }
 

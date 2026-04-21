@@ -9,6 +9,7 @@ import { HarmonyType, SavedColor } from '../types';
 import { ColorWheel } from '../components/ColorWheel';
 import { HarmonyPreview } from '../components/HarmonyPreview';
 import { ContrastChecker } from '../components/ContrastChecker';
+import { ChipGroup } from '../components/Segmented';
 import { getHarmony } from '../utils/colorTheory';
 import {
   rgbToHex,
@@ -133,15 +134,14 @@ export function ColorTheoryPage(): JSX.Element {
             <label className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
               Harmony type
             </label>
-            <select
-              value={harmony}
-              onChange={(e) => setHarmony(e.target.value as HarmonyType)}
-              className="mt-2 w-full rounded-button border border-border-subtle bg-app px-3 py-2 text-sm"
-            >
-              {HARMONY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+            <div className="mt-2">
+              <ChipGroup<HarmonyType>
+                value={harmony}
+                onChange={setHarmony}
+                options={HARMONY_OPTIONS}
+                ariaLabel="Harmony type"
+              />
+            </div>
           </div>
 
           <div>
