@@ -14,6 +14,10 @@ files:
   - dist/**
   - dist-electron/**
   - package.json
+  # Ship the runtime assets — trayTemplate lives here and is loaded by
+  # nativeImage at app start. (directories.buildResources is only for
+  # files electron-builder consumes during packaging, not runtime.)
+  - assets/**
 # Leave behind any large dev-only files; sharpens the packaged bundle.
 asar: true
 compression: maximum

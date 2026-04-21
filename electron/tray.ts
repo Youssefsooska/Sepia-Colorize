@@ -25,9 +25,54 @@ function loadIcon(): Electron.NativeImage {
     if (process.platform === 'darwin') img.setTemplateImage(true);
     return img;
   }
-  // Fallback: create a tiny solid placeholder so the tray has *something*.
-  const placeholder = nativeImage.createEmpty();
-  return placeholder;
+  // Runtime fallback — build the aperture/reticle glyph pixel-by-pixel so
+  // the tray is always visible even if the asset file never made it into
+  // the bundle. Template mode (macOS) auto-tints the black+alpha shape to
+  // match the menu bar theme.
+  return buildFallbackTrayIcon();
+}
+
+function buildFallbackTrayIcon(): Electron.NativeImage {
+  // 16×16 base resolution for standard DPI; a 32×32 @2x variant is added
+  // via addRepresentation so Retina menu bars get the crisp version.
+  const base = drawReticleBitmap(16);
+  const at2x = drawReticleBitmap(32);
+  const img = nativeImage.createFromBuffer(base, { width: 16, height: 16 });
+  img.addRepresentation({
+    scaleFactor: 2,
+    width: 32,
+    height: 32,
+    buffer: at2x,
+  });
+  if (process.platform === 'darwin') img.setTemplateImage(true);
+  return img;
+}
+
+function drawReticleBitmap(size: number): Buffer {
+  // BGRA buffer: pure-black pixels with alpha carrying the ring+dot shape.
+  const buf = Buffer.alloc(size * size * 4);
+  const scale = size / 16;
+  const cx = size / 2 - 0.5;
+  const cy = size / 2 - 0.5;
+  const rOuter = 6 * scale;
+  const rInner = 4 * scale;
+  const rDot = 1.4 * scale;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      let a = 0;
+      if (d >= rInner && d <= rOuter) a = 255;
+      if (d <= rDot) a = 255;
+      const i = (y * size + x) * 4;
+      buf[i] = 0;     // B
+      buf[i + 1] = 0; // G
+      buf[i + 2] = 0; // R
+      buf[i + 3] = a;
+    }
+  }
+  return buf;
 }
 
 export function initTray(): void {

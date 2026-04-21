@@ -138,12 +138,12 @@ const OVERLAY_HTML = `
     }
 
     function render(cssX, cssY) {
-      // Position the loupe below-right of the cursor so it never covers
-      // the pixels being sampled. Flip to above-left near the screen edge.
-      const offset = 28;
-      let lx = cssX + offset, ly = cssY + offset;
-      if (lx + 140 > window.innerWidth) lx = cssX - offset - 140;
-      if (ly + 140 > window.innerHeight) ly = cssY - offset - 140;
+      // Loupe is centered on the cursor — the crosshair in its middle
+      // marks the exact pixel being sampled, so there's no visual gap
+      // between "where I'm pointing" and "what I'm picking".
+      const size = 140;
+      const lx = cssX - size / 2;
+      const ly = cssY - size / 2;
       loupe.style.left = lx + 'px';
       loupe.style.top = ly + 'px';
 
@@ -163,9 +163,11 @@ const OVERLAY_HTML = `
 
       const c = sampleAt(cssX, cssY);
       badge.textContent = rgbToHex(c.r, c.g, c.b);
-      // Badge hugs the loupe.
-      badge.style.left = (lx + 70 - 40) + 'px';
-      badge.style.top = (ly + 148) + 'px';
+      // Badge hugs the loupe, below or above depending on edge proximity.
+      let bx = cssX - 40, by = ly + size + 10;
+      if (by + 32 > window.innerHeight) by = ly - 34;
+      badge.style.left = bx + 'px';
+      badge.style.top = by + 'px';
     }
 
     function pickAt(e) {
