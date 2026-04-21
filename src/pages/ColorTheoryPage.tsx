@@ -64,17 +64,32 @@ export function ColorTheoryPage(): JSX.Element {
   };
 
   return (
-    <div className="flex-1 space-y-4 overflow-y-auto p-6">
-      <h1 className="text-xl font-medium">Color Theory &amp; Optimizer</h1>
+    <div className="flex-1 space-y-6 overflow-y-auto p-8">
+      <header className="flex items-baseline gap-4">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-text-primary">Color Theory</h1>
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">
+          harmony · contrast
+        </span>
+      </header>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-card bg-surface p-5">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <section className="space-y-5 rounded-card bg-surface p-6">
+          <div className="flex items-baseline justify-between">
+            <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-accent">
+              01 · Base
+            </span>
+            <span className="font-mono text-[11px] tracking-[0.08em] text-text-muted">
+              H {base.h.toFixed(0)}° · S {base.s.toFixed(0)}% · L {base.l.toFixed(0)}%
+            </span>
+          </div>
           <ColorWheel value={base} onChange={setBase} markers={palette} />
 
-          <div className="mt-4">
-            <label className="text-xs text-text-secondary">Or pick from your collections:</label>
+          <div>
+            <label className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
+              Or pick from collections
+            </label>
             <select
-              className="mt-1 w-full rounded-button border border-border-subtle bg-app px-2 py-1 text-sm"
+              className="mt-2 w-full rounded-button border border-border-subtle bg-app px-3 py-2 text-sm"
               onChange={(e) => {
                 const c = colors[e.target.value];
                 if (c) pickFromCollections(c);
@@ -87,23 +102,41 @@ export function ColorTheoryPage(): JSX.Element {
               ))}
             </select>
           </div>
-        </div>
+        </section>
 
-        <div className="rounded-card bg-surface p-5">
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-card" style={{ backgroundColor: baseHex }} />
-            <div>
-              <div className="text-xs text-text-secondary">Selected</div>
-              <div className="font-mono text-sm">{baseHex}</div>
+        <section className="flex flex-col gap-5 rounded-card bg-surface p-6">
+          <div className="flex items-baseline justify-between">
+            <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-accent">
+              02 · Harmony
+            </span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-text-muted">
+              {palette.length} colors
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3 rounded-card bg-app p-4">
+            <div
+              className="h-12 w-12 rounded-card shadow-inner"
+              style={{ backgroundColor: baseHex }}
+            />
+            <div className="min-w-0">
+              <div className="font-mono text-base font-medium tracking-[0.01em] text-text-primary">
+                {baseHex}
+              </div>
+              <div className="font-mono text-[11px] text-text-secondary">
+                rgb {baseRgb.r} {baseRgb.g} {baseRgb.b}
+              </div>
             </div>
           </div>
 
-          <div className="mt-4">
-            <label className="text-xs text-text-secondary">Harmony type</label>
+          <div>
+            <label className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
+              Harmony type
+            </label>
             <select
               value={harmony}
               onChange={(e) => setHarmony(e.target.value as HarmonyType)}
-              className="mt-1 w-full rounded-button border border-border-subtle bg-app px-2 py-1 text-sm"
+              className="mt-2 w-full rounded-button border border-border-subtle bg-app px-3 py-2 text-sm"
             >
               {HARMONY_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -111,18 +144,20 @@ export function ColorTheoryPage(): JSX.Element {
             </select>
           </div>
 
-          <div className="mt-4">
-            <div className="mb-2 text-xs text-text-secondary">Generated palette</div>
+          <div>
+            <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
+              Generated palette
+            </div>
             <HarmonyPreview colors={palette} />
           </div>
 
           <button
             onClick={savePalette}
-            className="mt-4 w-full rounded-button bg-accent px-3 py-2 text-sm text-white hover:bg-accent-hover"
+            className="mt-auto w-full rounded-button bg-accent px-3 py-2.5 text-sm font-semibold text-app hover:bg-accent-hover"
           >
             Save palette to new collection
           </button>
-        </div>
+        </section>
       </div>
 
       <ContrastChecker />

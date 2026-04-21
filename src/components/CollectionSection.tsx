@@ -77,9 +77,15 @@ export function CollectionSection({
             className="bg-transparent text-base font-medium text-text-primary outline-none border-b border-border-accent"
           />
         ) : (
-          <h2 className="text-base font-medium text-text-primary">{title}</h2>
+          <h2 className="text-lg font-medium tracking-[-0.01em] text-text-primary">{title}</h2>
         )}
-        <span className="font-mono text-sm text-text-secondary">{colors.length}</span>
+        <span
+          className={`font-mono text-[11px] uppercase tracking-[0.12em] ${
+            isAllColors ? 'text-accent' : 'text-text-muted'
+          }`}
+        >
+          {colors.length} {isAllColors ? 'saved' : 'colors'}
+        </span>
       </header>
 
       {visibleColors.length > 0 && (
@@ -94,7 +100,7 @@ export function CollectionSection({
         <div className="h-px flex-1 bg-border-subtle" />
         <button
           onClick={onToggle}
-          className="text-xs text-text-secondary hover:text-text-primary"
+          className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted hover:text-text-primary"
         >
           {expanded ? 'collapse ∧' : 'expand ∨'}
         </button>

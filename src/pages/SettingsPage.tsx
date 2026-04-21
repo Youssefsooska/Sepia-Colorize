@@ -97,10 +97,15 @@ export function SettingsPage(): JSX.Element {
   };
 
   return (
-    <div className="flex-1 space-y-6 overflow-y-auto p-6">
-      <h1 className="text-xl font-medium">Settings</h1>
+    <div className="flex-1 space-y-8 overflow-y-auto p-8">
+      <header className="flex items-baseline gap-4">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-text-primary">Settings</h1>
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-muted">
+          v1.0.0 · synced locally
+        </span>
+      </header>
 
-      <Section title="HOTKEYS">
+      <Section title="HOTKEYS" aside="click to rebind · esc to cancel">
         <Row label="Pick color from screen">
           <HotkeyRecorder
             shortcut={settings.hotkeys.pickColor}
@@ -169,7 +174,7 @@ export function SettingsPage(): JSX.Element {
         </Row>
       </Section>
 
-      <Section title="DATA">
+      <Section title="DATA" aside="stored locally · never leaves this machine">
         <div className="text-sm text-text-secondary">Total colors saved: <span className="text-text-primary">{totalColors}</span></div>
         <div className="text-sm text-text-secondary">Total collections: <span className="text-text-primary">{totalCollections}</span></div>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -201,10 +206,24 @@ export function SettingsPage(): JSX.Element {
 
 // --- Layout primitives ----------------------------------------------------
 
-function Section({ title, children }: { title: string; children: ReactNode }): JSX.Element {
+function Section({
+  title,
+  aside,
+  children,
+}: {
+  title: string;
+  aside?: string;
+  children: ReactNode;
+}): JSX.Element {
   return (
-    <section className="space-y-2">
-      <h2 className="text-[11px] font-medium uppercase tracking-wider text-text-muted">{title}</h2>
+    <section className="space-y-4">
+      <header className="flex items-baseline gap-4">
+        <h2 className="font-mono text-[11px] uppercase tracking-[0.12em] text-accent">{title}</h2>
+        <div className="h-px flex-1 bg-border-subtle" />
+        {aside && (
+          <span className="font-mono text-[10px] tracking-[0.08em] text-text-muted">{aside}</span>
+        )}
+      </header>
       <div className="rounded-card bg-surface p-5 space-y-3">{children}</div>
     </section>
   );

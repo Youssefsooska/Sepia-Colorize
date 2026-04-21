@@ -10,7 +10,7 @@ import { useColorStore } from '../stores/colorStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { CollectionSection } from '../components/CollectionSection';
 import { ExportModal } from '../components/ExportModal';
-import { acceleratorDisplay } from '../components/HotkeyRecorder';
+import { AcceleratorChips } from '../components/HotkeyRecorder';
 import { Collection, SavedColor } from '../types';
 
 interface DrawerPageProps {
@@ -50,26 +50,27 @@ export function DrawerPage({ onOpenSettings }: DrawerPageProps): JSX.Element {
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Toolbar */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border-subtle bg-app/90 px-6 py-3 backdrop-blur">
+      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border-subtle bg-app/90 px-8 py-4 backdrop-blur">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by hex…"
-          className="w-64 rounded-button border border-border-subtle bg-surface px-3 py-1.5 text-sm outline-none focus:border-border-accent"
+          className="w-72 rounded-button border border-border-subtle bg-surface px-3 py-2 font-mono text-sm outline-none placeholder:text-text-muted focus:border-border-accent"
         />
         <div className="flex-1" />
         <button
           onClick={() => setExportAllOpen(true)}
-          className="rounded-button border border-border-subtle bg-surface px-3 py-1.5 text-sm hover:bg-surface-hover"
+          className="flex items-center gap-2 rounded-button border border-border-subtle bg-surface px-3.5 py-2 text-sm text-text-primary hover:bg-surface-hover"
         >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Export All
         </button>
         <button
           onClick={onOpenSettings}
           title="Change shortcut"
-          className="rounded-button border border-border-subtle bg-surface px-2.5 py-1 font-mono text-xs text-text-secondary hover:text-text-primary"
+          className="rounded-button border border-border-subtle bg-surface px-2.5 py-1.5 hover:bg-surface-hover"
         >
-          {acceleratorDisplay(pickHotkey, platform)}
+          <AcceleratorChips shortcut={pickHotkey} platform={platform} />
         </button>
       </div>
 

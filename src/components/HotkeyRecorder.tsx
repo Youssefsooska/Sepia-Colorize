@@ -39,7 +39,7 @@ export function HotkeyRecorder({ shortcut, onChange, platform }: HotkeyRecorderP
       onBlur={() => { if (draft) onChange(draft); setListening(false); setDraft(null); }}
       className={`inline-flex items-center gap-1 rounded-button border px-2 py-1 font-mono text-sm transition-colors ${
         listening
-          ? 'border-accent text-accent shadow-[0_0_0_2px_rgba(123,106,255,0.25)]'
+          ? 'border-accent text-accent shadow-[0_0_0_2px_rgba(232,162,59,0.28)]'
           : 'border-border-subtle bg-surface-elevated text-text-primary hover:border-border-accent'
       }`}
     >
@@ -87,4 +87,29 @@ function acceleratorToSymbols(accel: string, platform: NodeJS.Platform): string[
 /** Standalone helper used elsewhere in the UI for showing the shortcut badge. */
 export function acceleratorDisplay(accel: string, platform: NodeJS.Platform): string {
   return acceleratorToSymbols(accel, platform).join('');
+}
+
+/** Render a shortcut as a row of individual kbd chips — the dashboard-style
+ * badge used in the drawer toolbar and anywhere else we want the accelerator
+ * to read like keycaps rather than a single mono string. */
+export function AcceleratorChips({
+  shortcut,
+  platform,
+}: {
+  shortcut: string;
+  platform: NodeJS.Platform;
+}): JSX.Element {
+  const symbols = acceleratorToSymbols(shortcut, platform);
+  return (
+    <span className="inline-flex items-center gap-1">
+      {symbols.map((s, i) => (
+        <span
+          key={i}
+          className="inline-flex min-w-[22px] items-center justify-center rounded border border-border-subtle bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-text-primary"
+        >
+          {s}
+        </span>
+      ))}
+    </span>
+  );
 }
