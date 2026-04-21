@@ -1,0 +1,22 @@
+# electron-builder configuration for packaging Sepia.
+# Produces a .dmg for macOS and an NSIS installer + portable .exe for Windows.
+appId: com.sepia.app
+productName: Sepia
+directories:
+  output: dist-release
+  buildResources: assets
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/icon.icns
+  target:
+    - dmg
+    - zip
+win:
+  icon: assets/icon.ico
+  target:
+    - nsis
+    - portable
