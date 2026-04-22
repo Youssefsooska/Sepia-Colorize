@@ -62,8 +62,51 @@ dmg:
       path: /Applications
 
 win:
-  # electron-builder converts this PNG into the multi-size .ico internally.
-  icon: assets/icon.png
+  # Windows shell + NSIS installer both require a real multi-size .ico —
+  # a .png here fails inside the NSIS macros with "invalid icon file".
+  # scripts/generate-icons.mjs builds assets/icon.ico with 16–256 sizes.
+  icon: assets/icon.ico
+  # File metadata that Windows shows in Explorer → Properties → Details.
+  # Not signed — Windows SmartScreen will warn "publisher unknown" until a
+  # code-signing cert is wired in; see README.md for the upgrade path.
+  publisherName: Sepia
+  verifyUpdateCodeSignature: false
+  # Build both flavors so the user can choose install vs. portable:
+  #   • nsis     → a real installer (Start Menu shortcut, uninstaller)
+  #   • portable → a single self-extracting .exe that runs from anywhere
   target:
-    - nsis
-    - portable
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+    - target: portable
+      arch:
+        - x64
+        - arm64
+
+nsis:
+  # Best-practice defaults for a desktop app installer:
+  #   - Not one-click: show the user what's happening, let them pick options.
+  #   - Per-user by default (no UAC elevation unless they choose per-machine)
+  #     so Sepia installs into %LOCALAPPDATA%\Programs and upgrades cleanly.
+  #   - Start Menu shortcut on by default, Desktop shortcut user-choosable.
+  #   - Finish page offers "Run Sepia" on completion.
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Sepia
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  # Installer and uninstaller icons — Windows shell uses the app icon by
+  # default, but explicit paths here make the intent obvious for anyone
+  # reading this config later.
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+
+portable:
+  # The portable .exe unpacks into a temp dir on each run. Name the file
+  # so the user can spot it immediately in Downloads.
+  artifactName: Sepia-${version}-portable-${arch}.exe

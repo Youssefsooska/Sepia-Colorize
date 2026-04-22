@@ -141,11 +141,48 @@ function makeTrayIcon(size = 16) {
   return encodePNG(size, size, buf);
 }
 
+// --- multi-size .ico writer ----------------------------------------------
+
+/**
+ * Windows .ico format (since Vista): a simple directory + a list of
+ * images. Each image can be either BMP or full PNG; modern Windows
+ * shell accepts PNG storage and it's smaller, so we embed PNGs. Used
+ * by the NSIS installer + the .exe resource, both of which reject a
+ * plain .png file.
+ */
+function encodeICO(sizes) {
+  const images = sizes.map((size) => ({ size, png: makeAppIcon(size) }));
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0);           // reserved
+  header.writeUInt16LE(1, 2);           // type: 1 = icon
+  header.writeUInt16LE(images.length, 4);
+
+  const dir = Buffer.alloc(16 * images.length);
+  let offset = 6 + dir.length;
+  images.forEach((img, i) => {
+    const row = i * 16;
+    // Width/height of 0 means 256 per the ICO spec; anything else is literal.
+    dir[row] = img.size >= 256 ? 0 : img.size;
+    dir[row + 1] = img.size >= 256 ? 0 : img.size;
+    dir[row + 2] = 0;                   // palette count
+    dir[row + 3] = 0;                   // reserved
+    dir.writeUInt16LE(1, row + 4);      // color planes
+    dir.writeUInt16LE(32, row + 6);     // bpp
+    dir.writeUInt32LE(img.png.length, row + 8);
+    dir.writeUInt32LE(offset, row + 12);
+    offset += img.png.length;
+  });
+  return Buffer.concat([header, dir, ...images.map((i) => i.png)]);
+}
+
 // --- write files ---------------------------------------------------------
 
 writeFileSync(join(assetsDir, 'icon.png'), makeAppIcon(512));
 writeFileSync(join(assetsDir, 'trayTemplate.png'), makeTrayIcon(16));
 // A 2x template for retina menu bars.
 writeFileSync(join(assetsDir, 'trayTemplate@2x.png'), makeTrayIcon(32));
+// Multi-size .ico for Windows shell + NSIS installer. 256 is the top
+// size Windows Explorer renders; 16/24/32/48 are the shell thumbnails.
+writeFileSync(join(assetsDir, 'icon.ico'), encodeICO([16, 24, 32, 48, 64, 128, 256]));
 
-console.log('Wrote assets/icon.png, assets/trayTemplate.png, assets/trayTemplate@2x.png');
+console.log('Wrote assets/icon.png, assets/icon.ico, assets/trayTemplate.png, assets/trayTemplate@2x.png');

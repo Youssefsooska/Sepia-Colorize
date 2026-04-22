@@ -3,12 +3,18 @@
   "productName": "Sepia",
   "version": "1.0.0",
   "description": "Sepia — cross-platform color picker & color theory tool",
+  "author": {
+    "name": "Sepia",
+    "email": "noreply@sepia.app"
+  },
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && electron-builder",
     "build:mac": "tsc --noEmit && vite build && electron-builder --mac",
+    "build:win": "tsc --noEmit && vite build && electron-builder --win",
     "build:unpack": "tsc --noEmit && vite build && electron-builder --dir",
+    "build:win:unpack": "tsc --noEmit && vite build && electron-builder --win --dir",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },

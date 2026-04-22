@@ -56,21 +56,28 @@ function loadIcon(): Electron.NativeImage {
   const candidate = path.join(__dirnameLocal, '../assets/trayTemplate.png');
   const img = nativeImage.createFromPath(candidate);
   if (!img.isEmpty()) {
-    if (process.platform === 'darwin') img.setTemplateImage(true);
-    return img;
+    // Template mode is macOS-only — macOS auto-tints the black+alpha shape
+    // to match the menu bar theme. On Windows the notification area shows
+    // the icon as-is, so we leave template off and the black file will be
+    // invisible there; fall through to the procedural icon in that case.
+    if (process.platform === 'darwin') {
+      img.setTemplateImage(true);
+      return img;
+    }
   }
-  // Runtime fallback — build the aperture/reticle glyph pixel-by-pixel so
-  // the tray is always visible even if the asset file never made it into
-  // the bundle. Template mode (macOS) auto-tints the black+alpha shape to
-  // match the menu bar theme.
+  // Runtime fallback — always used on Windows/Linux, and on macOS if the
+  // asset file is missing. Windows taskbar chrome is dark, so we paint
+  // white-on-transparent there; macOS templates flip tone automatically,
+  // so black-on-transparent is the right base for that.
   return buildFallbackTrayIcon();
 }
 
 function buildFallbackTrayIcon(): Electron.NativeImage {
-  // 16×16 base resolution for standard DPI; a 32×32 @2x variant is added
-  // via addRepresentation so Retina menu bars get the crisp version.
-  const base = drawReticleBitmap(16);
-  const at2x = drawReticleBitmap(32);
+  // White glyph on Windows/Linux (visible on dark taskbars); black on
+  // macOS where template-image mode tint-matches the menu bar theme.
+  const white = process.platform !== 'darwin';
+  const base = drawReticleBitmap(16, white);
+  const at2x = drawReticleBitmap(32, white);
   const img = nativeImage.createFromBuffer(base, { width: 16, height: 16 });
   img.addRepresentation({
     scaleFactor: 2,
@@ -82,8 +89,10 @@ function buildFallbackTrayIcon(): Electron.NativeImage {
   return img;
 }
 
-function drawReticleBitmap(size: number): Buffer {
-  // BGRA buffer: pure-black pixels with alpha carrying the ring+dot shape.
+function drawReticleBitmap(size: number, white: boolean): Buffer {
+  // BGRA buffer. Alpha carries the ring+dot shape; color channels set to
+  // white on Windows/Linux so the glyph reads on the default dark taskbar,
+  // black on macOS where setTemplateImage handles tinting.
   const buf = Buffer.alloc(size * size * 4);
   const scale = size / 16;
   const cx = size / 2 - 0.5;
@@ -91,6 +100,7 @@ function drawReticleBitmap(size: number): Buffer {
   const rOuter = 6 * scale;
   const rInner = 4 * scale;
   const rDot = 1.4 * scale;
+  const v = white ? 255 : 0;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const dx = x - cx;
@@ -100,9 +110,9 @@ function drawReticleBitmap(size: number): Buffer {
       if (d >= rInner && d <= rOuter) a = 255;
       if (d <= rDot) a = 255;
       const i = (y * size + x) * 4;
-      buf[i] = 0;     // B
-      buf[i + 1] = 0; // G
-      buf[i + 2] = 0; // R
+      buf[i] = v;     // B
+      buf[i + 1] = v; // G
+      buf[i + 2] = v; // R
       buf[i + 3] = a;
     }
   }
