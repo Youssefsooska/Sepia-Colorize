@@ -132,8 +132,12 @@ const OVERLAY_HTML = `
 
     async function start() {
       try {
+        // cursor:'never' tells macOS ScreenCaptureKit to OMIT the mouse
+        // cursor from the stream. Without this, sampling at the cursor
+        // position returns the cursor sprite's pixels, not the pixel
+        // underneath — which is exactly the "picks cursor color" bug.
         const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: { ideal: 60 } },
+          video: { frameRate: { ideal: 60 }, cursor: 'never' },
           audio: false,
         });
         video.srcObject = stream;
