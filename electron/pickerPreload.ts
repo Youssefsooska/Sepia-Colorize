@@ -13,4 +13,11 @@ contextBridge.exposeInMainWorld('sepiaPicker', {
     ipcRenderer.invoke('picker:sample-at', { x: screenX, y: screenY }),
   cancel: () => ipcRenderer.send('picker:cancel'),
   logError: (message: string) => ipcRenderer.send('picker:log-error', String(message)),
+  // Subscribe to the one-shot snapshot that main ships when the overlay
+  // is ready — feeds the magnifier's preview canvas.
+  onSnapshot: (cb: (dataUrl: string) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, dataUrl: string) => cb(dataUrl);
+    ipcRenderer.on('picker:snapshot', listener);
+    return () => ipcRenderer.removeListener('picker:snapshot', listener);
+  },
 });
