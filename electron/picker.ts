@@ -49,57 +49,68 @@ let pickerWindow: BrowserWindow | null = null;
 const OVERLAY_HTML = `
 <!doctype html>
 <html><head><meta charset="UTF-8"><style>
-  html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;background:transparent;cursor:none;color:#fff;font-family:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;user-select:none}
+  html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;background:transparent;color:#fff;font-family:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;user-select:none}
+  /* Custom crosshair cursor — dark outer stroke, thin white inner for
+     visibility on any background, 4px transparent gap at the center so
+     the sampled pixel is never under an opaque element. Hot-spot is
+     (12,12) so the center of the cross IS the sample point. */
+  *{cursor:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g stroke='black' stroke-width='3' stroke-linecap='butt'><line x1='12' y1='1' x2='12' y2='9'/><line x1='12' y1='15' x2='12' y2='23'/><line x1='1' y1='12' x2='9' y2='12'/><line x1='15' y1='12' x2='23' y2='12'/></g><g stroke='white' stroke-width='1' stroke-linecap='butt'><line x1='12' y1='1' x2='12' y2='9'/><line x1='12' y1='15' x2='12' y2='23'/><line x1='1' y1='12' x2='9' y2='12'/><line x1='15' y1='12' x2='23' y2='12'/></g></svg>") 12 12,crosshair !important}
   /* Hidden working canvas — we never show it, only sample from it. */
   #work{position:fixed;inset:0;width:100vw;height:100vh;visibility:hidden;pointer-events:none}
-  /* Loupe sits offset from the cursor so it never occludes the real pixel
-     being sampled. The crosshair at the cursor (below) is what marks the
-     actual sample point. */
-  #loupe{position:fixed;width:140px;height:140px;border-radius:50%;border:2px solid rgba(255,255,255,.9);box-shadow:0 8px 32px rgba(0,0,0,.55);pointer-events:none;overflow:hidden;background:#000}
-  #loupe canvas{width:100%;height:100%;image-rendering:pixelated}
-  #loupeCross{position:absolute;top:50%;left:50%;width:9px;height:9px;transform:translate(-50%,-50%);border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.75);pointer-events:none;border-radius:1px}
-  /* Cursor crosshair — two thin lines with a clear gap at the center so
-     the single pixel being sampled shows through the overlay unobscured
-     to the getDisplayMedia stream. */
-  #cursorMark{position:fixed;width:28px;height:28px;pointer-events:none;transform:translate(-50%,-50%);filter:drop-shadow(0 0 1px rgba(0,0,0,0.9))}
-  #hexBadge{position:fixed;pointer-events:none;background:rgba(20,20,20,.92);color:#fff;font-family:"JetBrains Mono","SF Mono","Consolas",monospace;font-size:13px;padding:7px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.18);letter-spacing:0.02em;font-weight:600;white-space:nowrap}
+  /* The picker panel: magnifier + color readouts in one floating chip. */
+  #panel{position:fixed;display:flex;align-items:stretch;padding:10px;background:rgba(18,19,17,0.92);border:1px solid rgba(255,255,255,0.12);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,0.55);pointer-events:none;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  #zoomWrap{position:relative;width:100px;height:100px;border-radius:50%;overflow:hidden;background:#000;flex-shrink:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.15)}
+  #zoomCanvas{width:100%;height:100%;image-rendering:pixelated;display:block}
+  #zoomCross{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,0.7);border-radius:1px;pointer-events:none}
+  #info{display:flex;flex-direction:column;justify-content:center;padding:0 16px 0 18px;min-width:148px}
+  #hexLine{font-family:"JetBrains Mono","SF Mono",monospace;font-size:18px;font-weight:700;letter-spacing:0.02em;color:#F0E8DC;line-height:22px}
+  #rgbLine,#hslLine{font-family:"JetBrains Mono","SF Mono",monospace;font-size:11px;color:#A09A8C;margin-top:3px;letter-spacing:0.02em}
+  #swatch{width:10px;height:10px;border-radius:2px;margin-right:8px;vertical-align:middle;display:inline-block;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.2)}
   /* A near-invisible body fill guarantees every click hits our window on
      macOS; a fully-transparent window can let clicks fall through. */
   body{background:rgba(0,0,0,0.01)}
-  #hint{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:7px 16px;background:rgba(20,20,20,.88);border:1px solid rgba(255,255,255,.18);border-radius:999px;color:#fff;font-size:12px;pointer-events:none;letter-spacing:0.04em;max-width:90vw;white-space:nowrap}
+  #hint{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);padding:7px 16px;background:rgba(18,19,17,0.88);border:1px solid rgba(255,255,255,0.12);border-radius:999px;color:rgba(240,232,220,0.8);font-size:11px;pointer-events:none;letter-spacing:0.08em;text-transform:uppercase;font-family:"JetBrains Mono",monospace}
 </style></head><body>
   <canvas id="work"></canvas>
-  <div id="loupe"><canvas id="loupeCanvas" width="17" height="17"></canvas><div id="loupeCross"></div></div>
-  <svg id="cursorMark" viewBox="0 0 28 28">
-    <!-- Four arms with a 4px-wide transparent hole at the center so the
-         exact sampled pixel is never under an opaque element. -->
-    <line x1="0"  y1="14" x2="10" y2="14" stroke="black" stroke-width="3" />
-    <line x1="18" y1="14" x2="28" y2="14" stroke="black" stroke-width="3" />
-    <line x1="14" y1="0"  x2="14" y2="10" stroke="black" stroke-width="3" />
-    <line x1="14" y1="18" x2="14" y2="28" stroke="black" stroke-width="3" />
-    <line x1="0"  y1="14" x2="10" y2="14" stroke="white" stroke-width="1" />
-    <line x1="18" y1="14" x2="28" y2="14" stroke="white" stroke-width="1" />
-    <line x1="14" y1="0"  x2="14" y2="10" stroke="white" stroke-width="1" />
-    <line x1="14" y1="18" x2="14" y2="28" stroke="white" stroke-width="1" />
-  </svg>
-  <div id="hexBadge">#------</div>
+  <div id="panel">
+    <div id="zoomWrap">
+      <canvas id="zoomCanvas" width="17" height="17"></canvas>
+      <div id="zoomCross"></div>
+    </div>
+    <div id="info">
+      <div id="hexLine">#------</div>
+      <div id="rgbLine">rgb 0 0 0</div>
+      <div id="hslLine">hsl 0 0 0</div>
+    </div>
+  </div>
   <div id="hint">Click to pick · Esc to cancel</div>
   <script>
     const work = document.getElementById('work');
     const workCtx = work.getContext('2d', { willReadFrequently: true });
-    const loupeCanvas = document.getElementById('loupeCanvas');
-    const loupeCtx = loupeCanvas.getContext('2d');
-    loupeCtx.imageSmoothingEnabled = false;
-    const loupe = document.getElementById('loupe');
-    const cursorMark = document.getElementById('cursorMark');
-    const badge = document.getElementById('hexBadge');
+    const zoomCanvas = document.getElementById('zoomCanvas');
+    const zoomCtx = zoomCanvas.getContext('2d');
+    zoomCtx.imageSmoothingEnabled = false;
+    const panel = document.getElementById('panel');
+    const hexLine = document.getElementById('hexLine');
+    const rgbLine = document.getElementById('rgbLine');
+    const hslLine = document.getElementById('hslLine');
     const hint = document.getElementById('hint');
-    // Debug readout pinned to the hint chip so we can see what's
-    // happening without opening devtools. Turn off once the picker is
-    // verified working by setting DEBUG = false.
-    const DEBUG = true;
     const toHex = (n) => n.toString(16).padStart(2, '0').toUpperCase();
     const rgbToHex = (r, g, b) => '#' + toHex(r) + toHex(g) + toHex(b);
+    function rgbToHsl(r, g, b) {
+      r /= 255; g /= 255; b /= 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      const d = max - min;
+      let h = 0, s = 0, l = (max + min) / 2;
+      if (d !== 0) {
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
+        else if (max === g) h = ((b - r) / d + 2);
+        else h = ((r - g) / d + 4);
+        h *= 60;
+      }
+      return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
+    }
 
     let ready = false;
     // Video element holds the live screen stream. We don't mount it in the
@@ -175,30 +186,24 @@ const OVERLAY_HTML = `
     }
 
     function render(cssX, cssY, screenX, screenY) {
-      // Cursor marker rides the window-relative client coords — that's
-      // what the mousemove event gives us, so the on-screen graphic
-      // tracks what the user is actually pointing at.
-      cursorMark.style.left = cssX + 'px';
-      cursorMark.style.top = cssY + 'px';
+      // Floating panel follows the cursor with a 28px offset so it never
+      // covers the pixel being sampled. The panel flips to the opposite
+      // side if it would go off-screen.
+      const panelW = panel.offsetWidth || 260;
+      const panelH = panel.offsetHeight || 120;
+      const gap = 28;
+      let px = cssX + gap, py = cssY + gap;
+      if (px + panelW > window.innerWidth) px = cssX - gap - panelW;
+      if (py + panelH > window.innerHeight) py = cssY - gap - panelH;
+      panel.style.left = px + 'px';
+      panel.style.top = py + 'px';
 
-      // Loupe offset 40px below-right (flipped at edges) so it never
-      // occludes the sample pixel.
-      const size = 140;
-      const gap = 40;
-      let lx = cssX + gap, ly = cssY + gap;
-      if (lx + size > window.innerWidth) lx = cssX - gap - size;
-      if (ly + size > window.innerHeight) ly = cssY - gap - size;
-      loupe.style.left = lx + 'px';
-      loupe.style.top = ly + 'px';
-
-      // Zoomed 17×17 view anchored on the SAMPLE point (screen coords
-      // transformed to video pixels) so the loupe shows the same pixel
-      // that a click would save.
+      // Zoomed 17×17 view anchored on the SAMPLE point in video pixels.
       const { x: vx, y: vy } = screenToVideo(screenX, screenY);
       const half = 8;
-      loupeCtx.clearRect(0, 0, 17, 17);
+      zoomCtx.clearRect(0, 0, 17, 17);
       try {
-        loupeCtx.drawImage(
+        zoomCtx.drawImage(
           work,
           Math.max(0, vx - half),
           Math.max(0, vy - half),
@@ -206,23 +211,15 @@ const OVERLAY_HTML = `
         );
       } catch {}
 
+      // Color readouts.
       const c = sampleAt(screenX, screenY);
-      badge.textContent = rgbToHex(c.r, c.g, c.b);
-      let by = ly + size + 10;
-      if (by + 32 > window.innerHeight) by = ly - 34;
-      badge.style.left = (lx + size / 2 - 50) + 'px';
-      badge.style.top = by + 'px';
-
-      if (DEBUG) {
-        hint.textContent =
-          'client=' + cssX + ',' + cssY +
-          ' | screen=' + screenX + ',' + screenY +
-          ' | win=' + window.innerWidth + 'x' + window.innerHeight +
-          ' | scr=' + window.screen.width + 'x' + window.screen.height +
-          ' | vid=' + work.width + 'x' + work.height +
-          ' | pick=' + vx + ',' + vy +
-          ' | rgb=' + c.r + ',' + c.g + ',' + c.b;
-      }
+      const hex = rgbToHex(c.r, c.g, c.b);
+      const hsl = rgbToHsl(c.r, c.g, c.b);
+      hexLine.innerHTML =
+        '<span id="swatch" style="background:' + hex + '"></span>' + hex;
+      rgbLine.textContent = 'rgb  ' + c.r + '  ' + c.g + '  ' + c.b;
+      hslLine.textContent =
+        'hsl  ' + hsl.h + '°  ' + hsl.s + '%  ' + hsl.l + '%';
     }
 
     function pickAt(e) {
