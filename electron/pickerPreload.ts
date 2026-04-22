@@ -1,24 +1,16 @@
 /**
- * Preload for the fullscreen picker overlay window.
- *
- * Exposes only what the overlay needs:
- *   - send the picked color back to the main process;
- *   - request a cancel on Escape or right-click.
- *
- * The overlay itself fetches its live pixels via `navigator.mediaDevices.
- * getDisplayMedia`; the main-process \`session.setDisplayMediaRequestHandler\`
- * auto-responds with the display under the cursor, so no capture IPC is
- * needed here.
+ * Preload for the picker overlay. Exposes a tiny API that lets the overlay
+ * ask main to sample a pixel at a screen coordinate and to cancel.
  */
 import { contextBridge, ipcRenderer } from 'electron';
 
-interface PickerResult {
-  hex: string;
-  rgb: { r: number; g: number; b: number };
-}
-
 contextBridge.exposeInMainWorld('sepiaPicker', {
-  sendResult: (result: PickerResult) => ipcRenderer.send('picker:result', result),
+  // Ask main to sample the pixel at (screenX, screenY) via desktopCapturer
+  // and forward the result to the renderer. Returns true once main has
+  // accepted the request — the color itself flows through the main→renderer
+  // 'color:picked' channel, not back through this call.
+  sampleAndSend: (screenX: number, screenY: number) =>
+    ipcRenderer.invoke('picker:sample-at', { x: screenX, y: screenY }),
   cancel: () => ipcRenderer.send('picker:cancel'),
   logError: (message: string) => ipcRenderer.send('picker:log-error', String(message)),
 });

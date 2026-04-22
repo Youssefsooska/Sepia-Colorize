@@ -1,18 +1,19 @@
 /**
- * Screen color picker — opens a transparent fullscreen overlay window on the
- * active display, waits for a click, and sends the picked color back.
+ * Screen color picker — opens a transparent fullscreen overlay on the active
+ * display, waits for a click, and returns the pixel color at the cursor.
  *
- * The overlay markup is defined inline here (as a data: URL) rather than as
- * a separate HTML file, because vite-plugin-electron only bundles TypeScript
- * into dist-electron/. Inlining sidesteps a build-time copy step and keeps
- * the picker self-contained.
- *
- * Conversion from the picked RGB to HSL/CMYK happens here so the renderer
- * gets a fully-formed `PickedColorPayload` and doesn't need to do the math.
+ * The sampling path runs in the MAIN process via `desktopCapturer.getSources`,
+ * not in the overlay via `getDisplayMedia`. On macOS, getDisplayMedia uses
+ * ScreenCaptureKit which includes the mouse cursor sprite in every frame —
+ * sampling at the cursor position would return the arrow-pixel color, not
+ * the pixel underneath. desktopCapturer uses CGDisplayCreateImage, which
+ * does NOT include the cursor, so the sample is what the user sees through
+ * the transparent overlay.
  */
 import {
   BrowserWindow,
   app,
+  desktopCapturer,
   dialog,
   globalShortcut,
   ipcMain,
@@ -26,10 +27,9 @@ import { rgbToHsl, rgbToCmyk } from '../src/utils/colorConversion';
 import { getMainWindow, sendToRenderer } from './main';
 import type { PickedColorPayload } from '../src/types';
 
-// Deep link that opens System Settings → Privacy & Security → Screen &
-// System Audio Recording on macOS 10.15 through 15. Using the private
-// `x-apple.systempreferences:` URL scheme is the blessed way to land on a
-// specific privacy pane; no public API takes the user there directly.
+// Deep link into System Settings → Privacy & Security → Screen & System
+// Audio Recording. Private URL scheme; the only way to land the user on
+// the exact pane without a public API.
 const MAC_SCREEN_RECORDING_PREFS =
   'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
 
@@ -37,228 +37,56 @@ const __dirnameLocal = __dirname;
 
 let pickerWindow: BrowserWindow | null = null;
 
-// The overlay document is inlined here so no HTML file needs to ship alongside
-// the bundled JS. The overlay uses a LIVE MediaStream via getDisplayMedia
-// (not a one-shot screenshot) so the picker shows real-time pixels — video
-// playing, text being typed, animations all update under the loupe.
-//
-// The picker window itself is marked setContentProtection(true) in the main
-// process so the stream captures the screen WITHOUT the overlay's own loupe
-// or hex badge; otherwise we'd sample the loupe pixels instead of the
-// screen pixels underneath.
+// Minimal overlay: a transparent fullscreen window that shows a small hint
+// and a custom crosshair that follows the mouse. The OS cursor is hidden
+// via `cursor: none` to eliminate the dual-cursor artifact that always-on-
+// top transparent windows exhibit on macOS. Sampling is delegated to main.
 const OVERLAY_HTML = `
 <!doctype html>
 <html><head><meta charset="UTF-8"><style>
   html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;background:transparent;color:#fff;font-family:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;user-select:none}
-  /* Use the native macOS crosshair cursor. A custom url() cursor produced
-     a dual-cursor artifact (the system arrow kept showing alongside it)
-     on always-on-top transparent windows. Native crosshair is crisp,
-     matches OS feel, and avoids the dual-cursor bug entirely. */
-  *{cursor:crosshair !important}
-  /* Hidden working canvas — we never show it, only sample from it. */
-  #work{position:fixed;inset:0;width:100vw;height:100vh;visibility:hidden;pointer-events:none}
-  /* The picker panel: magnifier + color readouts in one floating chip. */
-  #panel{position:fixed;display:flex;align-items:stretch;padding:10px;background:rgba(18,19,17,0.92);border:1px solid rgba(255,255,255,0.12);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,0.55);pointer-events:none;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-  #zoomWrap{position:relative;width:100px;height:100px;border-radius:50%;overflow:hidden;background:#000;flex-shrink:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.15)}
-  #zoomCanvas{width:100%;height:100%;image-rendering:pixelated;display:block}
-  #zoomCross{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,0.7);border-radius:1px;pointer-events:none}
-  #info{display:flex;flex-direction:column;justify-content:center;padding:0 16px 0 18px;min-width:148px}
-  #hexLine{font-family:"JetBrains Mono","SF Mono",monospace;font-size:18px;font-weight:700;letter-spacing:0.02em;color:#F0E8DC;line-height:22px}
-  #rgbLine,#hslLine{font-family:"JetBrains Mono","SF Mono",monospace;font-size:11px;color:#A09A8C;margin-top:3px;letter-spacing:0.02em}
-  #swatch{width:10px;height:10px;border-radius:2px;margin-right:8px;vertical-align:middle;display:inline-block;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.2)}
-  /* A near-invisible body fill guarantees every click hits our window on
-     macOS; a fully-transparent window can let clicks fall through. */
+  /* Hide the OS cursor entirely. macOS keeps drawing the system arrow on
+     top of any CSS cursor we set on a transparent always-on-top window,
+     which is the "two cursors" bug. cursor:none is the only reliable way
+     to get exactly one indicator on screen (our DIV crosshair below). */
+  *{cursor:none !important}
+  /* Near-invisible body fill so every click registers on this window
+     instead of falling through to whatever is underneath. */
   body{background:rgba(0,0,0,0.01)}
+  /* Custom crosshair — pure CSS, no bitmap. A 1px hole at the exact
+     center keeps the sample point visually unobstructed. */
+  #xh{position:fixed;pointer-events:none;width:26px;height:26px;margin-left:-13px;margin-top:-13px;left:-40px;top:-40px;mix-blend-mode:difference;z-index:10}
+  #xh::before,#xh::after{content:"";position:absolute;background:#fff}
+  #xh::before{left:12px;top:0;width:2px;height:11px;box-shadow:0 15px 0 #fff}
+  #xh::after{top:12px;left:0;height:2px;width:11px;box-shadow:15px 0 0 #fff}
   #hint{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);padding:7px 16px;background:rgba(18,19,17,0.88);border:1px solid rgba(255,255,255,0.12);border-radius:999px;color:rgba(240,232,220,0.8);font-size:11px;pointer-events:none;letter-spacing:0.08em;text-transform:uppercase;font-family:"JetBrains Mono",monospace}
 </style></head><body>
-  <canvas id="work"></canvas>
-  <div id="panel">
-    <div id="zoomWrap">
-      <canvas id="zoomCanvas" width="17" height="17"></canvas>
-      <div id="zoomCross"></div>
-    </div>
-    <div id="info">
-      <div id="hexLine">#------</div>
-      <div id="rgbLine">rgb 0 0 0</div>
-      <div id="hslLine">hsl 0 0 0</div>
-    </div>
-  </div>
+  <div id="xh"></div>
   <div id="hint">Click to pick · Esc to cancel</div>
   <script>
-    const work = document.getElementById('work');
-    const workCtx = work.getContext('2d', { willReadFrequently: true });
-    const zoomCanvas = document.getElementById('zoomCanvas');
-    const zoomCtx = zoomCanvas.getContext('2d');
-    zoomCtx.imageSmoothingEnabled = false;
-    const panel = document.getElementById('panel');
-    const hexLine = document.getElementById('hexLine');
-    const rgbLine = document.getElementById('rgbLine');
-    const hslLine = document.getElementById('hslLine');
-    const hint = document.getElementById('hint');
-    const toHex = (n) => n.toString(16).padStart(2, '0').toUpperCase();
-    const rgbToHex = (r, g, b) => '#' + toHex(r) + toHex(g) + toHex(b);
-    function rgbToHsl(r, g, b) {
-      r /= 255; g /= 255; b /= 255;
-      const max = Math.max(r, g, b), min = Math.min(r, g, b);
-      const d = max - min;
-      let h = 0, s = 0, l = (max + min) / 2;
-      if (d !== 0) {
-        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-        if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
-        else if (max === g) h = ((b - r) / d + 2);
-        else h = ((r - g) / d + 4);
-        h *= 60;
-      }
-      return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
-    }
-
-    let ready = false;
-    // Video element holds the live screen stream. We don't mount it in the
-    // DOM — it just drives drawImage every frame.
-    const video = document.createElement('video');
-    video.muted = true;
-    video.playsInline = true;
-
-    // Mouse position tracked in two coordinate systems:
-    //   mx/my          — client coords (relative to the overlay window)
-    //   smx/smy        — screen coords (absolute on the display)
-    // The sample coordinate uses SCREEN coords to avoid off-by-menu-bar
-    // bugs when Electron silently pushes the window down below the menu
-    // bar on macOS; clientX would be short by ~24px in that case and
-    // every pick would be offset. Screen coords align 1:1 with the
-    // display pixels the video stream is capturing.
-    let mx = -1, my = -1;
-    let smx = -1, smy = -1;
-
-    async function start() {
-      try {
-        // cursor:'never' tells macOS ScreenCaptureKit to OMIT the mouse
-        // cursor from the stream. Without this, sampling at the cursor
-        // position returns the cursor sprite's pixels, not the pixel
-        // underneath — which is exactly the "picks cursor color" bug.
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: { ideal: 60 }, cursor: 'never' },
-          audio: false,
-        });
-        video.srcObject = stream;
-        await new Promise((res) => { video.onloadedmetadata = res; });
-        await video.play();
-        // Size the working canvas to the raw video resolution so sampling
-        // reads from native pixels rather than a downscaled copy.
-        work.width = video.videoWidth;
-        work.height = video.videoHeight;
-        ready = true;
-        tick();
-      } catch (err) {
-        console.warn('getDisplayMedia failed', err);
-        const msg = err && err.message ? err.message : String(err);
-        const name = err && err.name ? err.name : 'Error';
-        hint.textContent = 'Screen capture failed: ' + name + ' — ' + msg + '. Esc to cancel.';
-        try { window.sepiaPicker.logError(name + ': ' + msg); } catch {}
-      }
-    }
-
-    function tick() {
-      if (!ready) return;
-      // Draw the current video frame into the hidden canvas so we always
-      // sample fresh pixels, regardless of whether the mouse moved.
-      try { workCtx.drawImage(video, 0, 0, work.width, work.height); } catch {}
-      if (mx >= 0) render(mx, my, smx, smy);
-      requestAnimationFrame(tick);
-    }
-
-    // Convert screen-relative CSS coords to video-pixel coords. Uses
-    // window.screen.width/height which reflect the ENTIRE display, not
-    // whatever area our overlay window ended up occupying — this gives
-    // the right ratio even if the window is offset by the menu bar.
-    function screenToVideo(screenX, screenY) {
-      const sw = window.screen.width || window.innerWidth;
-      const sh = window.screen.height || window.innerHeight;
-      return {
-        x: Math.round((screenX / sw) * work.width),
-        y: Math.round((screenY / sh) * work.height),
-      };
-    }
-
-    function sampleAt(screenX, screenY) {
-      if (!ready) return { r: 0, g: 0, b: 0 };
-      const { x, y } = screenToVideo(screenX, screenY);
-      try {
-        const d = workCtx.getImageData(x, y, 1, 1).data;
-        return { r: d[0], g: d[1], b: d[2] };
-      } catch { return { r: 0, g: 0, b: 0 }; }
-    }
-
-    function render(cssX, cssY, screenX, screenY) {
-      // Floating panel follows the cursor with a 28px offset so it never
-      // covers the pixel being sampled. The panel flips to the opposite
-      // side if it would go off-screen.
-      const panelW = panel.offsetWidth || 260;
-      const panelH = panel.offsetHeight || 120;
-      const gap = 28;
-      let px = cssX + gap, py = cssY + gap;
-      if (px + panelW > window.innerWidth) px = cssX - gap - panelW;
-      if (py + panelH > window.innerHeight) py = cssY - gap - panelH;
-      panel.style.left = px + 'px';
-      panel.style.top = py + 'px';
-
-      // Zoomed 17×17 view anchored on the SAMPLE point in video pixels.
-      const { x: vx, y: vy } = screenToVideo(screenX, screenY);
-      const half = 8;
-      zoomCtx.clearRect(0, 0, 17, 17);
-      try {
-        zoomCtx.drawImage(
-          work,
-          Math.max(0, vx - half),
-          Math.max(0, vy - half),
-          17, 17, 0, 0, 17, 17,
-        );
-      } catch {}
-
-      // Color readouts.
-      const c = sampleAt(screenX, screenY);
-      const hex = rgbToHex(c.r, c.g, c.b);
-      const hsl = rgbToHsl(c.r, c.g, c.b);
-      hexLine.innerHTML =
-        '<span id="swatch" style="background:' + hex + '"></span>' + hex;
-      rgbLine.textContent = 'rgb  ' + c.r + '  ' + c.g + '  ' + c.b;
-      hslLine.textContent =
-        'hsl  ' + hsl.h + '°  ' + hsl.s + '%  ' + hsl.l + '%';
-    }
-
-    function pickAt(e) {
-      if (!ready) return; // Don't ship #000000 back before the stream starts.
-      // Sample using SCREEN coords so the picked pixel matches the one
-      // under the real cursor, regardless of any window offset.
-      const { r, g, b } = sampleAt(e.screenX, e.screenY);
-      try { window.sepiaPicker.sendResult({ hex: rgbToHex(r, g, b), rgb: { r, g, b } }); }
-      catch (err) { console.error('picker IPC missing', err); }
-    }
-
+    const xh = document.getElementById('xh');
+    // Follow the mouse. We read clientX/Y for the DIV position (it's
+    // relative to the overlay) but send screenX/Y to main for sampling
+    // (absolute display coords — what desktopCapturer understands).
     window.addEventListener('mousemove', (e) => {
-      mx = e.clientX; my = e.clientY;
-      smx = e.screenX; smy = e.screenY;
+      xh.style.left = e.clientX + 'px';
+      xh.style.top = e.clientY + 'px';
     });
-    window.addEventListener('click', pickAt);
-
-    // Right-click or Esc always attempts a cancel; if IPC is unavailable we
-    // can't close from here, but the main-process Escape watchdog will.
+    window.addEventListener('click', (e) => {
+      try { window.sepiaPicker.sampleAndSend(e.screenX, e.screenY); }
+      catch (err) { console.error('picker IPC missing', err); }
+    });
+    // Right-click or Esc cancels. Main also watches Escape as a safety net.
     const cancelSafe = () => { try { window.sepiaPicker && window.sepiaPicker.cancel(); } catch {} };
     window.addEventListener('contextmenu', (e) => { e.preventDefault(); cancelSafe(); });
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelSafe(); });
-
-    start();
   </script>
 </body></html>
 `;
 
-/**
- * Write the inline overlay HTML to a stable path inside Electron's
- * per-user temp directory and return that path. Done once per app run and
- * cached thereafter. We inline the HTML in TypeScript so the renderer
- * stays self-contained, but Chromium requires a real origin for
- * `getDisplayMedia`, so we need to actually land it on disk.
- */
+// Write the overlay HTML once per app run so Chromium can load it via a
+// file:// origin. Loading inline HTML via data: URLs hits origin-null
+// restrictions on some Electron APIs, so a real file is safer.
 let overlayFilePath: string | null = null;
 function ensureOverlayFile(): string {
   if (overlayFilePath && fs.existsSync(overlayFilePath)) return overlayFilePath;
@@ -268,23 +96,14 @@ function ensureOverlayFile(): string {
   return target;
 }
 
-/**
- * Open the picker overlay on whatever display the cursor is currently on.
- *
- * On macOS, we require Screen Recording permission before even showing the
- * overlay — picking without it returns all-black pixels. If the permission
- * is missing we surface a modal dialog with a direct shortcut to the right
- * pane in System Settings; opening the fullscreen overlay in that state
- * would be confusing and would also swallow the user's next click.
- */
+// Open the picker overlay on the display currently under the cursor.
+// Requires Screen Recording permission on macOS; prompts the user with a
+// System Settings deep link if it's missing.
 export async function startPicking(): Promise<void> {
-  if (pickerWindow) return; // Already picking — ignore repeat triggers.
+  if (pickerWindow) return; // already picking
 
   if (process.platform === 'darwin') {
     const status = systemPreferences.getMediaAccessStatus('screen');
-    // Anything other than 'granted' means the capture will return all-black
-    // pixels, so don't waste a fullscreen overlay — prompt for permission
-    // first. 'unknown' exists only on non-macOS and won't hit this branch.
     if (status !== 'granted') {
       await promptForScreenRecording(status);
       return;
@@ -293,7 +112,6 @@ export async function startPicking(): Promise<void> {
 
   const point = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(point);
-  console.log('[picker] opening on display', display.id, 'bounds', display.bounds, 'scaleFactor', display.scaleFactor);
 
   pickerWindow = new BrowserWindow({
     x: display.bounds.x,
@@ -308,8 +126,6 @@ export async function startPicking(): Promise<void> {
     skipTaskbar: true,
     hasShadow: false,
     fullscreenable: false,
-    // Let the window cover the menu bar on macOS. Without this, the OS
-    // clamps Y to workArea.top and every mouse-Y reading is offset.
     enableLargerThanScreen: true,
     webPreferences: {
       preload: path.join(__dirnameLocal, 'pickerPreload.js'),
@@ -319,30 +135,12 @@ export async function startPicking(): Promise<void> {
     },
   });
 
-  // Force the exact display bounds after creation — Electron / macOS can
-  // silently nudge the initial position to avoid the menu bar, and if
-  // that happens every sample is shifted by the menu bar height.
   pickerWindow.setBounds(display.bounds);
   pickerWindow.setAlwaysOnTop(true, 'screen-saver');
   pickerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  pickerWindow.once('ready-to-show', () => {
-    const actual = pickerWindow && pickerWindow.getBounds();
-    console.log('[picker] window bounds after ready:', actual, 'expected:', display.bounds);
-  });
-  // Hide the overlay from any screen capture — including our own live
-  // stream. Without this, the loupe and hex badge drawn on the overlay
-  // would appear in the video feed and we'd sample the loupe's pixels
-  // instead of the screen pixels beneath.
-  pickerWindow.setContentProtection(true);
-  // Load the overlay from a real file on disk rather than a data: URL.
-  // Chromium denies `navigator.mediaDevices.getDisplayMedia` on data-URL
-  // origins (they're null-origin), and the picker silently fails with
-  // "NotAllowedError" the moment it tries to start a stream. A file:/
-  // origin is a valid secure context so the capture proceeds.
   pickerWindow.loadFile(ensureOverlayFile());
 
-  // Safety net: register Escape in main so the user can always cancel, even
-  // if the picker renderer's own key listener fails to run.
+  // Safety net — Escape cancels even if the overlay's key listener fails.
   globalShortcut.register('Escape', () => cancelPicking());
 
   pickerWindow.on('closed', () => {
@@ -359,12 +157,9 @@ export function cancelPicking(): void {
   }
 }
 
-/**
- * Show a modal prompting the user to grant Screen Recording permission and,
- * if they agree, deep-link into the right System Settings pane. We can't
- * open the pane directly from code — macOS requires user action — so the
- * "Open Settings" button is the only thing that'll land the user there.
- */
+// Show the Screen-Recording permission prompt with a direct deep link into
+// the System Settings pane. Running without permission returns all-black
+// pixels, so we refuse to open the picker in that state.
 async function promptForScreenRecording(
   status: 'not-determined' | 'denied' | 'restricted' | 'granted' | 'unknown',
 ): Promise<void> {
@@ -391,36 +186,68 @@ async function promptForScreenRecording(
   }
 }
 
-// --- IPC from the picker overlay ------------------------------------------
+// --- Sampling in main process ---------------------------------------------
 
-/**
- * Validate the payload coming back from the picker overlay before trusting
- * it enough to run color math on or forward to the renderer. The overlay
- * is technically running in a separate, sandboxed window, but we treat its
- * IPC as untrusted anyway — a malformed \`rgb\` object would crash the
- * main process when we destructure numbers out of it.
- */
-function isValidPickerResult(
-  value: unknown,
-): value is { hex: string; rgb: { r: number; g: number; b: number } } {
-  if (!value || typeof value !== 'object') return false;
-  const v = value as Record<string, unknown>;
-  if (typeof v.hex !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(v.hex)) return false;
-  const rgb = v.rgb as Record<string, unknown> | undefined;
-  if (!rgb || typeof rgb !== 'object') return false;
-  const isByte = (n: unknown): n is number =>
-    typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 255;
-  return isByte(rgb.r) && isByte(rgb.g) && isByte(rgb.b);
+// Read the RGB pixel at (screenX, screenY) by fetching a fresh screen
+// thumbnail via desktopCapturer and extracting one pixel from it. This path
+// is on the CLICK hot loop — each pick triggers one getSources call — but
+// it's fast enough for a single-pick interaction and guarantees cursor-free
+// pixels (CGDisplayCreateImage does not include the cursor sprite).
+async function sampleScreenAt(
+  screenX: number,
+  screenY: number,
+): Promise<{ r: number; g: number; b: number } | null> {
+  const display = screen.getDisplayNearestPoint({ x: screenX, y: screenY });
+  // Ask for the thumbnail at the display's native device-pixel resolution.
+  // Anything smaller would force Electron to down-sample and blur the
+  // precise pixel we're trying to read.
+  const nativeW = Math.round(display.size.width * display.scaleFactor);
+  const nativeH = Math.round(display.size.height * display.scaleFactor);
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: nativeW, height: nativeH },
+  });
+  if (!sources.length) return null;
+  // Match the source to the display under the cursor. Fall back to first.
+  const match =
+    sources.find((s) => String(s.display_id) === String(display.id)) ||
+    sources[0];
+  const img = match.thumbnail;
+  // Convert click coords (CSS pixels on that display) to image pixels.
+  const localX = screenX - display.bounds.x;
+  const localY = screenY - display.bounds.y;
+  const size = img.getSize();
+  const px = Math.max(0, Math.min(size.width - 1, Math.round(localX * (size.width / display.bounds.width))));
+  const py = Math.max(0, Math.min(size.height - 1, Math.round(localY * (size.height / display.bounds.height))));
+  // toBitmap returns a BGRA buffer on macOS/Windows. RGBA on some builds.
+  // crop(1×1) keeps the allocation tiny.
+  const pixelImg = img.crop({ x: px, y: py, width: 1, height: 1 });
+  const buf = pixelImg.toBitmap();
+  if (buf.length < 3) return null;
+  // Electron's nativeImage.toBitmap is BGRA on every desktop platform we
+  // ship for — pull the bytes in that order.
+  return { b: buf[0]!, g: buf[1]!, r: buf[2]! };
 }
 
-ipcMain.on('picker:result', (_e, payload: unknown) => {
-  if (!isValidPickerResult(payload)) return;
-  const { r, g, b } = payload.rgb;
-  const hsl = rgbToHsl(r, g, b);
-  const cmyk = rgbToCmyk(r, g, b);
+// Called from the overlay's preload when the user clicks. We sample in
+// main, run the color conversions, forward the result to the renderer,
+// and close the picker window.
+ipcMain.handle('picker:sample-at', async (_e, raw: unknown) => {
+  if (!raw || typeof raw !== 'object') return false;
+  const { x, y } = raw as { x?: unknown; y?: unknown };
+  if (typeof x !== 'number' || typeof y !== 'number') return false;
+  const sample = await sampleScreenAt(Math.round(x), Math.round(y));
+  if (!sample) return false;
+  const hex =
+    '#' +
+    [sample.r, sample.g, sample.b]
+      .map((n) => n.toString(16).padStart(2, '0').toUpperCase())
+      .join('');
+  const hsl = rgbToHsl(sample.r, sample.g, sample.b);
+  const cmyk = rgbToCmyk(sample.r, sample.g, sample.b);
   const color: PickedColorPayload = {
-    hex: payload.hex,
-    rgb: payload.rgb,
+    hex,
+    rgb: sample,
     hsl,
     cmyk,
     timestamp: Date.now(),
@@ -430,12 +257,13 @@ ipcMain.on('picker:result', (_e, payload: unknown) => {
     pickerWindow.close();
     pickerWindow = null;
   }
+  return true;
 });
 
 ipcMain.on('picker:cancel', () => cancelPicking());
 
-// Diagnostic channel — overlay forwards any fatal error so we can inspect it
-// from the main-process log (and the packaged app's Console.app entries).
+// Diagnostic channel — any fatal error in the overlay lands here so it
+// shows up in main-process logs and packaged-app Console.app entries.
 ipcMain.on('picker:log-error', (_e, message: unknown) => {
   if (typeof message === 'string') {
     console.error('[sepia picker]', message);
