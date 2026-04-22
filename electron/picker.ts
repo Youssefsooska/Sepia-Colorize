@@ -50,11 +50,11 @@ const OVERLAY_HTML = `
 <!doctype html>
 <html><head><meta charset="UTF-8"><style>
   html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;background:transparent;color:#fff;font-family:-apple-system,"SF Pro Display","Segoe UI",system-ui,sans-serif;user-select:none}
-  /* Custom crosshair cursor — dark outer stroke, thin white inner for
-     visibility on any background, 4px transparent gap at the center so
-     the sampled pixel is never under an opaque element. Hot-spot is
-     (12,12) so the center of the cross IS the sample point. */
-  *{cursor:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g stroke='black' stroke-width='3' stroke-linecap='butt'><line x1='12' y1='1' x2='12' y2='9'/><line x1='12' y1='15' x2='12' y2='23'/><line x1='1' y1='12' x2='9' y2='12'/><line x1='15' y1='12' x2='23' y2='12'/></g><g stroke='white' stroke-width='1' stroke-linecap='butt'><line x1='12' y1='1' x2='12' y2='9'/><line x1='12' y1='15' x2='12' y2='23'/><line x1='1' y1='12' x2='9' y2='12'/><line x1='15' y1='12' x2='23' y2='12'/></g></svg>") 12 12,crosshair !important}
+  /* Use the native macOS crosshair cursor. A custom url() cursor produced
+     a dual-cursor artifact (the system arrow kept showing alongside it)
+     on always-on-top transparent windows. Native crosshair is crisp,
+     matches OS feel, and avoids the dual-cursor bug entirely. */
+  *{cursor:crosshair !important}
   /* Hidden working canvas — we never show it, only sample from it. */
   #work{position:fixed;inset:0;width:100vw;height:100vh;visibility:hidden;pointer-events:none}
   /* The picker panel: magnifier + color readouts in one floating chip. */

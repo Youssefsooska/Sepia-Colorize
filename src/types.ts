@@ -130,6 +130,9 @@ export interface SepiaBridge {
   getPlatform: () => Promise<NodeJS.Platform>;
   onColorPicked: (cb: (color: PickedColorPayload) => void) => () => void;
   onPickerCancelled: (cb: () => void) => () => void;
+  // Push the renderer's recent-colors list to the tray menu. Called whenever
+  // the color store changes so the menu-bar swatches stay in sync.
+  syncTrayColors: (colors: { id: string; hex: string }[]) => void;
 }
 
 declare global {

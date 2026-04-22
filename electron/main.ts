@@ -13,7 +13,7 @@
 import { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell } from 'electron';
 import path from 'node:path';
 import { registerHotkeys, updateHotkey, unregisterAll } from './hotkeys';
-import { initTray, destroyTray } from './tray';
+import { initTray, destroyTray, setRecentColors } from './tray';
 import { saveExport } from './exporter';
 import { startPicking, cancelPicking } from './picker';
 import type { HotkeyUpdatePayload, ExportSavePayload } from '../src/types';
@@ -102,6 +102,21 @@ function registerIpc(): void {
   );
 
   ipcMain.handle('app:get-platform', () => process.platform);
+
+  // Renderer pushes the latest recent-colors list so the tray menu can
+  // show clickable swatches. Validated minimally: strip anything that
+  // doesn't look like an {id, hex} pair before handing to the tray.
+  ipcMain.on('tray:sync-colors', (_e, payload: unknown) => {
+    if (!Array.isArray(payload)) return;
+    const clean = payload.flatMap((x) => {
+      if (!x || typeof x !== 'object') return [];
+      const { id, hex } = x as { id?: unknown; hex?: unknown };
+      if (typeof id !== 'string' || typeof hex !== 'string') return [];
+      if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return [];
+      return [{ id, hex }];
+    });
+    setRecentColors(clean);
+  });
 }
 
 app.whenReady().then(() => {

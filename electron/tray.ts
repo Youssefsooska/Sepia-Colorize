@@ -7,7 +7,7 @@
  * If the asset is missing we fall back to an empty native image so the tray
  * still appears rather than crashing — the menu is the important part.
  */
-import { Tray, Menu, nativeImage, app } from 'electron';
+import { Tray, Menu, MenuItemConstructorOptions, nativeImage, app, clipboard } from 'electron';
 import path from 'node:path';
 import { startPicking } from './picker';
 import { getMainWindow, toggleMainWindow } from './main';
@@ -16,6 +16,40 @@ import { getCurrentHotkeys } from './hotkeys';
 const __dirnameLocal = __dirname;
 
 let tray: Tray | null = null;
+
+// Renderer pushes its recent-color list here whenever the color store
+// changes, so the tray menu can show clickable swatches. Held in module
+// scope rather than fetched from the store because the tray lives in the
+// main process and has no direct access to the renderer's localStorage.
+interface TrayColor { id: string; hex: string }
+let recentColors: TrayColor[] = [];
+
+// Replaces the cached list and rebuilds the menu so the swatches reflect
+// the latest state. Called from main on IPC from the renderer.
+export function setRecentColors(next: TrayColor[]): void {
+  recentColors = next.slice(0, 8); // cap list — a long menu is noisy
+  rebuildMenu();
+}
+
+// 16x16 solid-color NativeImage from a hex string. Menu item icons only
+// accept NativeImage, so we synthesize a tiny BGRA buffer per swatch.
+// Template mode is OFF — template would tint to match the menu theme and
+// erase the hue we're trying to show.
+function swatchIcon(hex: string): Electron.NativeImage {
+  const size = 16;
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  const r = m ? parseInt(m[1]!, 16) : 0;
+  const g = m ? parseInt(m[2]!, 16) : 0;
+  const b = m ? parseInt(m[3]!, 16) : 0;
+  const buf = Buffer.alloc(size * size * 4);
+  for (let i = 0; i < size * size; i++) {
+    buf[i * 4] = b;
+    buf[i * 4 + 1] = g;
+    buf[i * 4 + 2] = r;
+    buf[i * 4 + 3] = 255;
+  }
+  return nativeImage.createFromBuffer(buf, { width: size, height: size });
+}
 
 function loadIcon(): Electron.NativeImage {
   // Expected asset path (packaged or dev).
@@ -87,10 +121,22 @@ export function initTray(): void {
   });
 }
 
-/** Rebuilds the tray menu — called after hotkey changes for fresh labels. */
+// Rebuilds the tray menu — called after hotkey changes and whenever the
+// renderer pushes a new recent-colors list. Colors are rendered as
+// clickable swatches with the hex as label; clicking copies the hex to
+// the clipboard so the user can paste it anywhere without opening the app.
 export function rebuildMenu(): void {
   if (!tray) return;
   const hk = getCurrentHotkeys();
+
+  const colorItems: MenuItemConstructorOptions[] = recentColors.length
+    ? recentColors.map((c) => ({
+        label: c.hex,
+        icon: swatchIcon(c.hex),
+        click: () => clipboard.writeText(c.hex),
+      }))
+    : [{ label: 'No colors yet', enabled: false }];
+
   const menu = Menu.buildFromTemplate([
     {
       label: 'Pick Color',
@@ -105,12 +151,8 @@ export function rebuildMenu(): void {
       },
     },
     { type: 'separator' },
-    {
-      // Populated lazily from renderer state is out of scope for MVP — this
-      // static label keeps the menu layout consistent.
-      label: 'Recent Colors',
-      enabled: false,
-    },
+    { label: 'Recent Colors', enabled: false },
+    ...colorItems,
     { type: 'separator' },
     {
       label: 'Quit Sepia',

@@ -36,6 +36,8 @@ const bridge: SepiaBridge = {
     ipcRenderer.on('picker:cancelled', listener);
     return () => ipcRenderer.removeListener('picker:cancelled', listener);
   },
+
+  syncTrayColors: (colors) => ipcRenderer.send('tray:sync-colors', colors),
 };
 
 contextBridge.exposeInMainWorld('sepia', bridge);
