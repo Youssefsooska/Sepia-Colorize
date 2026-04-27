@@ -39,6 +39,10 @@ mac:
   notarize: false
   hardenedRuntime: false
   gatekeeperAssess: false
+  # Stable, version-free artifact names so the GitHub
+  # `releases/latest/download/...` URLs in README.md don't break on every
+  # version bump. The version still shows on the release page itself.
+  artifactName: Sepia-mac-${arch}.${ext}
   target:
     - target: dmg
       arch:
@@ -105,8 +109,11 @@ nsis:
   # reading this config later.
   installerIcon: assets/icon.ico
   uninstallerIcon: assets/icon.ico
+  # Stable filename so the README "Download for Windows" link stays valid
+  # across version bumps. The version still appears on the release page.
+  artifactName: Sepia-Setup-windows.exe
 
 portable:
-  # The portable .exe unpacks into a temp dir on each run. Name the file
-  # so the user can spot it immediately in Downloads.
-  artifactName: Sepia-${version}-portable-${arch}.exe
+  # The portable .exe unpacks into a temp dir on each run. Stable name
+  # for direct download links from the README.
+  artifactName: Sepia-portable-windows-${arch}.exe
