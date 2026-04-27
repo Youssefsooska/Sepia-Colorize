@@ -37,9 +37,36 @@ A desktop color picker for designers and developers. Pick any pixel on your scre
 
 ## First launch
 
-**macOS** — Right-click the app → **Open** the first time (the app is ad-hoc signed, not notarized). When the picker hotkey runs, macOS will ask for **Screen Recording** permission. Grant it in System Settings, then relaunch Sepia.
+Sepia isn't signed with a paid developer certificate, so both Apple and Microsoft will warn you the first time. **One-time** click-through on each — here's exactly what to do.
 
-**Windows** — SmartScreen will say *"publisher unknown"*. Click **More info → Run anyway**. The app isn't malicious — it's just unsigned. (Code-signing certificates cost money; this is the trade-off for free.)
+### macOS
+
+When you double-click Sepia.app you'll see *"Apple could not verify Sepia is free of malware"* with **Move to Trash / Done** buttons (no "Open" option on macOS Sequoia and later — Apple removed that shortcut).
+
+1. Click **Done** — don't trash the app.
+2. Open **System Settings → Privacy & Security**.
+3. Scroll to the **Security** section. You'll see: *"Sepia was blocked from use because it is not from an identified developer."*
+4. Click **Open Anyway** next to it.
+5. Confirm with Touch ID / your password.
+6. Sepia launches. macOS remembers the exception — you won't see this again.
+
+The first time you trigger the picker hotkey, macOS will also ask for **Screen Recording** permission. Grant it in System Settings → Privacy & Security → Screen & System Audio Recording, then relaunch Sepia.
+
+> **Power-user shortcut** (skips steps 1–5): open Terminal and run
+> `xattr -cr /Applications/Sepia.app`
+> This strips the quarantine flag the browser added at download.
+
+### Windows
+
+When you run the installer or portable .exe, SmartScreen blocks it with *"Windows protected your PC"* and a single **Don't run** button.
+
+1. Click **More info** (small text under the message).
+2. A **Run anyway** button appears at the bottom — click it.
+3. The installer / app runs. SmartScreen learns you've vouched for it.
+
+### Why these warnings exist
+
+Real fix: sign the app with an **Apple Developer ID** ($99/yr) and an **Authenticode certificate** (~$200-400/yr). Both warnings disappear silently for end users. Until then the click-through above is the trade-off for shipping for free.
 
 ---
 
